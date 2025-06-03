@@ -1,19 +1,20 @@
-# Delete all unused properties.
-
 # Give your module a name
-name: zmk-module-template
+name: zmk-driver-azoteq
+
 build:
   # List your dependencies
-  depends:
-    - zmk-example-dependency
+  # depends:
+  #   - zmk-driver-azoteq
   # Folder containing a "CMakeLists.txt" (. = root)
   cmake: .
   # Kconfig filepath
   kconfig: Kconfig
   settings:
-    # Folder containing a "boards" folder (. = root)
-    board_root: .
     # Folder containing a "dts" folder (. = root)
-    dts_root: .
-    # Folder containing a "snippets" folder (. = root)
-    snippet_root:  .
+    dts_root: ./dts
+
+
+# Specify the module version
+version: 1.0.0
+
+description: Driver module for Azoteq IQS5XX devices in ZMK.
