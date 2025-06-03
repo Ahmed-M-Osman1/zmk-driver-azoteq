@@ -6,14 +6,14 @@
  */
 #define DT_DRV_COMPAT azoteq_iqs5xx
 
-#include <drivers/gpio.h>
+#include <zephyr/drivers/gpio.h>
 #include <nrfx_gpiote.h>
-#include <init.h>
-#include <drivers/sensor.h>
-#include <logging/log.h>
-#include <drivers/i2c.h>
-#include <device.h>
-#include <devicetree.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 #include "iqs5xx.h"
 
 
@@ -25,7 +25,7 @@ static int iqs_regdump_err = 0;
 // Default config
 struct iqs5xx_reg_config iqs5xx_reg_config_default () {
     struct iqs5xx_reg_config regconf;
-  
+
     regconf.activeRefreshRate =         10;
     regconf.idleRefreshRate =           50;
     regconf.singleFingerGestureMask =   GESTURE_SINGLE_TAP | GESTURE_TAP_AND_HOLD;
@@ -34,14 +34,14 @@ struct iqs5xx_reg_config iqs5xx_reg_config_default () {
     regconf.tapDistance =               25;
     regconf.touchMultiplier =           0;
     regconf.debounce =                  0;
-    regconf.i2cTimeout =                4; 
+    regconf.i2cTimeout =                4;
     regconf.filterSettings =            MAV_FILTER | IIR_FILTER /* | IIR_SELECT static mode */;
     regconf.filterDynBottomBeta =        22;
     regconf.filterDynLowerSpeed =        19;
     regconf.filterDynUpperSpeed =        140;
 
     regconf.initScrollDistance =        25;
-    
+
 
     return regconf;
 }
@@ -122,7 +122,7 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
         return res;
     }
 
-    
+
     // Gestures
     data->raw_data.gestures0 =      buffer[0];
     data->raw_data.gestures1 =      buffer[1];
@@ -171,7 +171,7 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
     while (1) {
         // Sleep for maximum possible time to maximize processor time for other tasks
         #ifdef CONFIG_IQS5XX_POLL
-            
+
             k_msleep(4);
 
             // Poll data ready pin
@@ -180,7 +180,7 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
             if(nstate) {
                 // Fetch the sample
                 iqs5xx_sample_fetch(dev);
-                
+
                 // Trigger
                 if(data->data_ready_handler != NULL) {
                     data->data_ready_handler(dev, &data->raw_data);
@@ -188,10 +188,10 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
             }
         #elif CONFIG_IQS5XX_INTERRUPT
             k_sem_take(&data->gpio_sem, K_FOREVER);
-            
+
             k_mutex_lock(&data->i2c_mutex, K_MSEC(1000));
             iqs5xx_sample_fetch(dev);
-            // Trigger 
+            // Trigger
             if(data->data_ready_handler != NULL) {
                 data->data_ready_handler(dev, &data->raw_data);
             }
@@ -202,7 +202,7 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
 }
 
 /**
- * @brief Sets the trigger handler 
+ * @brief Sets the trigger handler
 */
 int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handler) {
     struct iqs5xx_data *data = dev->data;
@@ -212,10 +212,10 @@ int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handle
 
 /**
  * @brief Called when data ready pin goes active. Releases the semaphore allowing thread to run.
- * 
- * @param dev 
- * @param cb 
- * @param pins 
+ *
+ * @param dev
+ * @param cb
+ * @param pins
  */
 static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     struct iqs5xx_data *data = CONTAINER_OF(cb, struct iqs5xx_data, dr_cb);
@@ -225,8 +225,8 @@ static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, 
 
 /**
  * @brief Sets registers to initial values
- * 
- * @param dev 
+ *
+ * @param dev
  * @return >0 if error
  */
 int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_config *config) {
@@ -235,7 +235,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     struct iqs5xx_config *conf = dev->config;
 
     k_mutex_lock(&data->i2c_mutex, K_MSEC(5000));
-    
+
     // Wait for dataready?
     while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
         k_usleep(200);
@@ -332,7 +332,7 @@ static int iqs5xx_init(const struct device *dev) {
     data->dev = dev;
 
     k_mutex_init(&data->i2c_mutex);
-    
+
     // Configure data ready pin
 	gpio_pin_configure(config->dr_port, config->dr_pin, GPIO_INPUT | config->dr_flags);
 
@@ -340,7 +340,7 @@ static int iqs5xx_init(const struct device *dev) {
 
     // Blocking semaphore as a flag for sensor read
     k_sem_init(&data->gpio_sem, 0, UINT_MAX);
-    
+
     // Initialize interrupt callback
     gpio_init_callback(&data->dr_cb, iqs5xx_callback, BIT(config->dr_pin));
     // Add callback
