@@ -1,5 +1,5 @@
 # Give your module a name
-name: zmk-driver-azoteq
+name: zmkdriverazoteq
 
 build:
   # List your dependencies
