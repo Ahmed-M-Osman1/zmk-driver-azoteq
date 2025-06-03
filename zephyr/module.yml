@@ -12,9 +12,3 @@ build:
   settings:
     # Folder containing a "dts" folder (. = root)
     dts_root: ./dts
-
-
-# Specify the module version
-version: 1.0.0
-
-description: Driver module for Azoteq IQS5XX devices in ZMK.
