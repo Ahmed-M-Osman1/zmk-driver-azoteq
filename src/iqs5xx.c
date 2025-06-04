@@ -1,6 +1,6 @@
 #define DT_DRV_COMPAT azoteq_iqs5xx
 
-#include "azoteq_iqs5xx.h"
+#include "iqs5xx.h"
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <stdio.h>
