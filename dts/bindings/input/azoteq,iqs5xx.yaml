@@ -1,0 +1,11 @@
+description: Azoteq IQS5xx touch controller
+
+compatible: "azoteq,iqs5xx"
+
+include: i2c-device.yaml
+
+properties:
+  dr-gpios:
+    type: phandle-array
+    required: true
+    description: Data ready GPIO pin
