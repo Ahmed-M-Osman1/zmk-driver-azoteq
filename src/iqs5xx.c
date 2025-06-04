@@ -1,82 +1,23 @@
-
-/*
- * Copyright (c) 2020 The ZMK Contributors
- *
- * SPDX-License-Identifier: MIT
- */
 #define DT_DRV_COMPAT azoteq_iqs5xx
 
-#include <zephyr/drivers/gpio.h>
-#include <nrfx_gpiote.h>
+#include "azoteq_iqs5xx.h"
 #include <zephyr/init.h>
-#include <zephyr/drivers/sensor.h>
-#include <zephyr/logging/log.h>
+#include <zephyr/kernel.h>
+#include <stdio.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/drivers/i2c.h>
-#include <zephyr/device.h>
-#include <zephyr/devicetree.h>
-#include "iqs5xx.h"
+#include <zephyr/sys/byteorder.h>
+#include <nrfx_gpiote.h>
+#include <zephyr/input/input.h>
+
+LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 
-// DT_DRV_INST(0);
-LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-static int iqs_regdump_err = 0;
-
-// Default config
-struct iqs5xx_reg_config iqs5xx_reg_config_default () {
-    struct iqs5xx_reg_config regconf;
-
-    regconf.activeRefreshRate =         10;
-    regconf.idleRefreshRate =           50;
-    regconf.singleFingerGestureMask =   GESTURE_SINGLE_TAP | GESTURE_TAP_AND_HOLD;
-    regconf.multiFingerGestureMask =    GESTURE_TWO_FINGER_TAP | GESTURE_SCROLLG;
-    regconf.tapTime =                   150;
-    regconf.tapDistance =               25;
-    regconf.touchMultiplier =           0;
-    regconf.debounce =                  0;
-    regconf.i2cTimeout =                4;
-    regconf.filterSettings =            MAV_FILTER | IIR_FILTER /* | IIR_SELECT static mode */;
-    regconf.filterDynBottomBeta =        22;
-    regconf.filterDynLowerSpeed =        19;
-    regconf.filterDynUpperSpeed =        140;
-
-    regconf.initScrollDistance =        25;
-
-
-    return regconf;
-}
-
-/**
- * @brief Read from the iqs550 chip via i2c
- * example: iqs5xx_seq_read(dev, GestureEvents0_adr, buffer, 44)
- *
- * @param dev Pointer to device driver MASTER
- * @param start start address for reading
- * @param  pointer to buffer to be read into
- * @param len number of bytes to read
- * @return int
- */
-static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8_t *read_buf,
-                           const uint8_t len) {
-    const struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *config = dev->config;
-    uint16_t nstart = (start << 8 ) | (start >> 8);
-    return i2c_write_read(data->i2c, AZOTEQ_IQS5XX_ADDR, &nstart, sizeof(nstart), read_buf, len);
-}
-
-/**
- * @brief Write to the iqs550 chip via i2c
- * example: iqs5xx_write(dev, GestureEvents0_adr, buffer, 44)
- * @param dev Pointer to device driver MASTER
- * @param start address of the i2c slave
- * @param buf Buffer to be written
- * @param len number of bytes to write
- * @return int
- */
 static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, uint8_t *buf,
                         uint32_t num_bytes) {
 
-    const struct iqs5xx_data *data = dev->data;
+    const struct azoteq_iqs5xx_data *data = dev->data;
 
     uint8_t addr_buffer[2];
     struct i2c_msg msg[2];
@@ -91,281 +32,269 @@ static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, uin
     msg[1].len = num_bytes;
     msg[1].flags = I2C_MSG_WRITE | I2C_MSG_STOP;
 
-    int err = i2c_transfer(data->i2c, msg, 2, AZOTEQ_IQS5XX_ADDR);
+    int err = i2c_transfer(dev, msg, 2, AZOTEQ_IQS5XX_ADDR);
     return err;
 }
 
-static int iqs5xx_reg_dump (const struct device *dev) {
 
-    return iqs5xx_write(dev, IQS5XX_REG_DUMP_START_ADDRESS, _iqs5xx_regdump, IQS5XX_REG_DUMP_SIZE);
+
+static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8_t *read_buf,
+                           const uint8_t len) {
+//    const struct azoteq_iqs5xx_data *data = dev->data;
+//    const struct azoteq_iqs5xx_config *config = dev->config;
+    uint16_t nstart = (start << 8 ) | (start >> 8);
+    return i2c_write_read(dev, AZOTEQ_IQS5XX_ADDR, &nstart, sizeof(nstart), read_buf, len);
 }
 
-static int iqs5xx_attr_set(const struct device *dev, enum sensor_channel chan,
-                           enum sensor_attribute attr, const struct sensor_value *val) {
-	LOG_ERR("\nSetting attributes\n");
-    const struct iqs5xx_config *config = dev->config;
+
+
+static int read_register_len(const struct device *dev, uint8_t reg, uint8_t *value, u_int32_t num_bytes) {
+
+    if (k_is_in_isr()) {
+        return -EWOULDBLOCK;
+    }
+
+    struct azoteq_iqs5xx_config *config = (struct azoteq_iqs5xx_config *)dev->config;
+
+    int ret = i2c_burst_read_dt(&config->i2c_bus, reg, value, num_bytes);
+    if (ret != 0) {
+        LOG_ERR("i2c_write_read FAIL %d\n", ret);
+        return ret;
+    }
+
     return 0;
 }
 
-/**
- * @brief Read data from IQS5XX
-*/
-static int iqs5xx_sample_fetch (const struct device *dev) {
-    uint8_t buffer[44];
 
-    struct iqs5xx_data *data = dev->data;
 
-    int res = iqs5xx_seq_read(dev, GestureEvents0_adr, buffer, 44);
-	iqs5xx_write(dev, END_WINDOW, 0, 1);
-    if (res < 0) {
-        //LOG_ERR("\ntrackpad res: %d", res);
-        return res;
+static int read_register(const struct device *dev, uint8_t reg, uint16_t *value) {
+
+    if (k_is_in_isr()) {
+        return -EWOULDBLOCK;
     }
 
+    struct azoteq_iqs5xx_config *config = (struct azoteq_iqs5xx_config *)dev->config;
 
-    // Gestures
-    data->raw_data.gestures0 =      buffer[0];
-    data->raw_data.gestures1 =      buffer[1];
-    // System info
-    data->raw_data.system_info0 =   buffer[2];
-    data->raw_data.system_info1 =   buffer[3];
-    // Number of fingers
-    data->raw_data.finger_count =   buffer[4];
-    // Relative X position
-    data->raw_data.rx =             buffer[5] << 8 | buffer[6];
-    // Relative Y position
-    data->raw_data.ry =             buffer[7] << 8 | buffer[8];
-
-    // Fingers
-    for(int i = 0; i < 5; i++) {
-        const int p = 9 + (7 * i);
-        // Absolute X
-        data->raw_data.fingers[i].ax = buffer[p + 0] << 8 | buffer[p + 1];
-        // Absolute Y
-        data->raw_data.fingers[i].ay = buffer[p + 2] << 8 | buffer[p + 3];
-        // Touch strength
-        data->raw_data.fingers[i].strength = buffer[p + 4] << 8 | buffer[p + 5];
-        // Area
-        data->raw_data.fingers[i].area= buffer[p + 6];
+    uint16_t data = 0;
+    LOG_DBG("&config->i2c_bus: %d", &config->i2c_bus.addr);
+    int ret = i2c_burst_read_dt(&config->i2c_bus, reg, &data, sizeof(data));
+    if (ret != 0) {
+        LOG_DBG("i2c_write_read FAIL %d\n", ret);
+        return ret;
     }
+
+//     the register values are returned in big endian (MSB first)
+    *value = sys_be16_to_cpu(data);
+
     return 0;
 }
 
-static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
-    const struct device *dev = arg;
-	ARG_UNUSED(unused2);
-	ARG_UNUSED(unused3);
-    struct iqs5xx_data *data = dev->data;
-    struct iqs5xx_config *conf = dev->config;
-    int err = 0;
+static int write_register(const struct device *dev, uint8_t reg, uint16_t value) {
 
-    // Initialize device registers - may be overwritten later in trackpad.c
-    struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
-
-    err = iqs5xx_registers_init(dev, &iqs5xx_registers);
-    if(err) {
-        LOG_ERR("Failed to initialize IQS5xx registers!\r\n");
+    if (k_is_in_isr()) {
+        return -EWOULDBLOCK;
     }
 
-    int nstate = 0;
-    while (1) {
-        // Sleep for maximum possible time to maximize processor time for other tasks
-        #ifdef CONFIG_IQS5XX_POLL
+    struct azoteq_iqs5xx_config *config = (struct azoteq_iqs5xx_config *)dev->config;
 
-            k_msleep(4);
+    uint8_t data[2] = {0};
+    sys_put_be16(value, &data[0]);
 
-            // Poll data ready pin
-            nstate = gpio_pin_get(conf->dr_port, conf->dr_pin);
-
-            if(nstate) {
-                // Fetch the sample
-                iqs5xx_sample_fetch(dev);
-
-                // Trigger
-                if(data->data_ready_handler != NULL) {
-                    data->data_ready_handler(dev, &data->raw_data);
-                }
-            }
-        #elif CONFIG_IQS5XX_INTERRUPT
-            k_sem_take(&data->gpio_sem, K_FOREVER);
-
-            k_mutex_lock(&data->i2c_mutex, K_MSEC(1000));
-            iqs5xx_sample_fetch(dev);
-            // Trigger
-            if(data->data_ready_handler != NULL) {
-                data->data_ready_handler(dev, &data->raw_data);
-            }
-            k_mutex_unlock(&data->i2c_mutex);
-
-        #endif
-    }
+    return i2c_burst_write_dt(&config->i2c_bus, reg, &data[0], sizeof(data));
 }
 
-/**
- * @brief Sets the trigger handler
-*/
-int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handler) {
-    struct iqs5xx_data *data = dev->data;
-    data->data_ready_handler = handler;
-    return 0;
-}
 
-/**
- * @brief Called when data ready pin goes active. Releases the semaphore allowing thread to run.
- *
- * @param dev
- * @param cb
- * @param pins
- */
-static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    struct iqs5xx_data *data = CONTAINER_OF(cb, struct iqs5xx_data, dr_cb);
-    struct iqs5xx_config *config = data->dev->config;
-    k_sem_give(&data->gpio_sem);
-}
 
-/**
- * @brief Sets registers to initial values
- *
- * @param dev
- * @return >0 if error
- */
-int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_config *config) {
-    // TODO: Retry if error on write
-    struct iqs5xx_data *data = dev->data;
-    struct iqs5xx_config *conf = dev->config;
 
-    k_mutex_lock(&data->i2c_mutex, K_MSEC(5000));
 
-    // Wait for dataready?
-    while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
-        k_usleep(200);
+
+
+int azoteq_iqs5xx_init(const struct device *dev) {
+    LOG_WRN("AZOTEQ START");
+    struct azoteq_iqs5xx_data *data = dev->data;
+    const struct azoteq_iqs5xx_config *config = dev->config;
+
+    if (!device_is_ready( config->i2c_bus.bus)) {
+        LOG_WRN("i2c bus not ready!");
+        return -EINVAL;
     }
-
-    uint8_t buf = RESET_TP;
-    // Reset device
-    iqs5xx_write(dev, SystemControl1_adr, &buf, 1);
-    iqs5xx_write(dev, END_WINDOW, 0, 1);
-    k_msleep(10);
-
-    while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
-        k_usleep(200);
-    }
-
-    // Write register dump
-    iqs_regdump_err = iqs5xx_reg_dump(dev);
-
-    while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
-        k_usleep(200);
-    }
-
-    int err = 0;
-
-    // 16 or 32 bit values must be swapped to big endian
-    uint8_t wbuff[16];
-
-    // Set active refresh rate
-    *((uint16_t*)wbuff) = SWPEND16(config->activeRefreshRate);
-    err |= iqs5xx_write(dev, ActiveRR_adr, wbuff, 2);
-
-    // Set idle refresh rate
-    *((uint16_t*)wbuff) = SWPEND16(config->idleRefreshRate);
-    err |= iqs5xx_write(dev, IdleRR_adr, wbuff, 2);
-
-    // Set single finger gestures
-    err |= iqs5xx_write(dev, SFGestureEnable_adr, &config->singleFingerGestureMask, 1);
-
-    // Set multi finger gestures
-    err |= iqs5xx_write(dev, MFGestureEnable_adr, &config->multiFingerGestureMask, 1);
-
-    // Set tap time
-    *((uint16_t*)wbuff) = SWPEND16(config->tapTime);
-    err |= iqs5xx_write(dev, TapTime_adr, wbuff, 2);
-
-    // Set tap distance
-    *((uint16_t*)wbuff) = SWPEND16(config->tapDistance);
-    err |= iqs5xx_write(dev, TapDistance_adr, wbuff, 2);
-
-    // Set touch multiplier
-    err |= iqs5xx_write(dev, GlobalTouchSet_adr, &config->touchMultiplier, 1);
-
-    // Set debounce settings
-    err |= iqs5xx_write(dev, ProxDb_adr, &config->debounce, 1);
-
-    err |= iqs5xx_write(dev, TouchSnapDb_adr, &config->debounce, 1);
-
-
-    //wbuff[0] = ND_ENABLE;
-    wbuff[0] = 0;
-    // Set noise reduction
-    err |= iqs5xx_write(dev, HardwareSettingsA_adr, wbuff, 1);
-
-    // Set i2c timeout
-    err |= iqs5xx_write(dev, I2CTimeout_adr, &config->i2cTimeout, 1);
-
-    // Set filter settings
-    err |= iqs5xx_write(dev, FilterSettings0_adr, &config->filterSettings, 1);
-
-    err |= iqs5xx_write(dev, DynamicBottomBeta_adr, &config->filterDynBottomBeta, 1);
-
-    err |= iqs5xx_write(dev, DynamicLowerSpeed_adr, &config->filterDynLowerSpeed, 1);
-
-    *((uint16_t*)wbuff) = SWPEND16(config->filterDynUpperSpeed);
-    err |= iqs5xx_write(dev, DynamicUpperSpeed_adr, wbuff, 2);
-
-    // Set initial scroll distance
-    *((uint16_t*)wbuff) = SWPEND16(config->initScrollDistance);
-    err |= iqs5xx_write(dev, ScrollInitDistance_adr, wbuff, 2);
-
-    // Terminate transaction
-    iqs5xx_write(dev, END_WINDOW, 0, 1);
-
-    k_mutex_unlock(&data->i2c_mutex);
-
-    return err;
-}
-
-static int iqs5xx_init(const struct device *dev) {
-    struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *config = dev->config;
-    int err = 0;
 
     data->dev = dev;
 
-    k_mutex_init(&data->i2c_mutex);
 
-    // Configure data ready pin
-	gpio_pin_configure(config->dr_port, config->dr_pin, GPIO_INPUT | config->dr_flags);
+//    nrf_gpio_cfg_input(config->i2c_bus.bus.., NRF_GPIO_PIN_PULLUP);
+//    nrf_gpio_cfg_input(, NRF_GPIO_PIN_PULLUP);
 
-    #if CONFIG_IQS5XX_INTERRUPT
+//    uint16_t ic_version = 0;
+////    int err = read_register(dev, AZOTEQ_IQS5XX_ADDR, &ic_version);
+//    int err = iqs5xx_seq_read(dev, 0x00, &ic_version, 2);
+//    if (err != 0) {
+//        LOG_WRN("could not get IC version!");
+//        return err;
+//    }
 
-    // Blocking semaphore as a flag for sensor read
-    k_sem_init(&data->gpio_sem, 0, UINT_MAX);
+    write_register(dev, AZOTEQ_IQS5XX_ADDR + END_WINDOW, 0);
+    k_msleep(1);
 
-    // Initialize interrupt callback
-    gpio_init_callback(&data->dr_cb, iqs5xx_callback, BIT(config->dr_pin));
-    // Add callback
-	err = gpio_add_callback(config->dr_port, &data->dr_cb);
 
-    // Configure data ready interrupt
-    err = gpio_pin_interrupt_configure(config->dr_port, config->dr_pin, GPIO_INT_EDGE_TO_ACTIVE);
-    #endif
+    uint16_t ic_version = 0;
+    //    int err = read_register(dev, AZOTEQ_IQS5XX_ADDR, &ic_version);
+    int err = read_register(dev, AZOTEQ_IQS5XX_ADDR, &ic_version);
+    if (err != 0) {
+        LOG_WRN("could not get IC version!");
+    }
+
+    LOG_WRN("DEVICE: %d", dev);
+
+    //    k_msleep(1000);
+//    uint8_t prod_number[2];
+//    int err = iqs5xx_seq_read(dev, 0x00, &prod_number, 1);
+//    if (err != 0) {
+//        LOG_WRN("could not get register!");
+//        return err;
+//    }
+//    LOG_INF("prod_number %i", prod_number);
+
+
+//    uint16_t prod_number = 0;
+//    int err = i2c_burst_read(dev, 0x74, 0x00, &prod_number, 2);
+//    if (err != 0) {
+//        LOG_WRN("could not get register!");
+//        return err;
+//    }
+//    LOG_INF("prod_number %i", prod_number);
+
+    int ret = gpio_pin_configure_dt(&config->dr, GPIO_INPUT);
+    gpio_init_callback(&data->gpio_cb, azoteq_iqs5xx_gpio_cb, BIT(config->dr.pin));
+    if (ret < 0) {
+        LOG_ERR("can't configure gpio pin %i", ret);
+        return ret;
+    }
+
+//    uint8_t buffer[44];
+//    ret = iqs5xx_seq_read(dev, 0x000D, buffer, 44);
+//    iqs5xx_write(dev, (uint16_t)0xEEEE, 0, 1);
+
+    ret = azoteq_iqs5xx_set_int(dev, true);
+    if (ret < 0) {
+        LOG_ERR("can't set interrupt %i", ret);
+        return ret;
+    }
+
+    ret = gpio_add_callback(config->dr.port, &data->gpio_cb);
+    if (ret < 0) {
+        LOG_ERR("Failed to set DR callback: %d", ret);
+        return -EIO;
+    }
+
+    k_work_init(&data->work, azoteq_iqs5xx_work_cb);
+    LOG_ERR("&data->work init %d", &data->work);
+
+    LOG_WRN("AZOTEQ START %d", config->dr.pin);
+    LOG_WRN("AZOTEQ START %d", BIT(config->dr.pin));
 
     return 0;
 }
 
+static int azoteq_iqs5xx_set_int(const struct device *dev, const bool en) {
+    const struct azoteq_iqs5xx_config *config = dev->config;
+    int ret = gpio_pin_interrupt_configure_dt(&config->dr,
+                                              en ? GPIO_INT_EDGE_TO_ACTIVE : GPIO_INT_DISABLE);
+    if (ret < 0) {
+        LOG_ERR("can't set interrupt");
+    }
 
-static struct iqs5xx_data iqs5xx_data = {
-    .i2c = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(0))),
-    .data_ready_handler = NULL
-};
+    return ret;
+}
 
-static const struct iqs5xx_config iqs5xx_config = {
-    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_DRV_INST(0), dr_gpios)),
-    .dr_pin = DT_INST_GPIO_PIN(0, dr_gpios),
-    .dr_flags = DT_INST_GPIO_FLAGS(0, dr_gpios),
-};
+static void azoteq_iqs5xx_gpio_cb(const struct device *port, struct gpio_callback *cb, uint32_t pins) {
+    struct azoteq_iqs5xx_data *data = CONTAINER_OF(cb, struct azoteq_iqs5xx_data, gpio_cb);
+    k_work_submit(&data->work);
+}
 
-DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
-                      POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
+static void azoteq_iqs5xx_work_cb(struct k_work *work) {
+    struct azoteq_iqs5xx_data *data = CONTAINER_OF(work, struct azoteq_iqs5xx_data, work);
+    struct azoteq_iqs5xx_config *config = data->dev->config;
 
-K_THREAD_DEFINE(thread, 1024, iqs5xx_thread, DEVICE_DT_GET(DT_DRV_INST(0)), NULL, NULL, K_PRIO_COOP(10), 0, 0);
+    azoteq_iqs5xx_report_data(data);
+}
+
+static void azoteq_iqs5xx_report_data(const struct azoteq_iqs5xx_data *data) {
+
+
+//    uint8_t buffer[44];
+    uint8_t buffer[27];
+
+//    struct azoteq_iqs5xx_data *data = dev->data;
+
+    uint16_t ic_version = 0;
+//    int err = read_register(dev, AZOTEQ_IQS5XX_ADDR, &ic_version);
+//    int err = read_register(data->dev, 0x00, &ic_version);
+    int err = read_register_len(data->dev, 0x00, buffer, 27);
+    if (err != 0) {
+        LOG_WRN("t get IC version!");
+        return err;
+    }
+//    LOG_DBG("VERSION: %d", sys_be16_to_cpu(ic_version));
+//
+//    LOG_ERR("DEV: data->dev: %d", data->dev);
+
+//    int res = iqs5xx_seq_read(data->dev, GestureEvents0_adr, buffer, 44);
+//    iqs5xx_write(data->dev, END_WINDOW, 0, 1);
+//    if (res < 0) {
+//        LOG_ERR("\ntrackpad res: %d", res);
+//        return res;
+//    }
+
+
+    uint16_t *version = &buffer[0];
+    LOG_WRN("VERS: %i", sys_be16_to_cpu(*version));
+    uint8_t fingers = buffer[17];
+    LOG_WRN("FINGS: %i", fingers);
+
+//    int16_t *relX = &buffer[0x14];
+//    LOG_WRN("relX %i", sys_be16_to_cpu(*relX));
+    int16_t relX = buffer[0x12] << 8 | buffer[0x12 + 1];
+    LOG_WRN("relX %i", relX);
+
+//    input_report_rel(data->dev, INPUT_REL_X, relX, true, K_FOREVER);
+//    zmk_hid_report_key();
+    zmk_hid_mouse_movement_update(relX, 0);
+
+
+    input_report_rel(data->dev, INPUT_REL_Y, 10, false, K_NO_WAIT);
+//    LOG_WRN("ddddXXX %i", zmk_hid_mouse_report()->body->d_x);
+    input_report_rel(data->dev, INPUT_REL_X, 10, false, K_NO_WAIT);
+    input_report_rel(data->dev, INPUT_REL_WHEEL, 10, true, K_NO_WAIT);
+
+    input_report_key(data->dev, INPUT_BTN_2, 0, true, K_NO_WAIT);
+
+    int16_t absX = buffer[0x16] << 8 | buffer[0x16 + 1];
+    LOG_WRN("absXXX %i", absX);
+
+    zmk_hid_mouse_movement_update(relX, 0);
+    zmk_usb_hid_send_mouse_report();
+//    input_report_rel(data->dev, INPUT_REL_Y, 0, false, K_FOREVER);
+//    input_report_rel(data->dev, INPUT_REL_X, 10, true, K_FOREVER);
+
+//    struct input_listener_config *config = 0;
+//    input_handler();
+
+
+
+    //    azoteq_iqs5xx_set_int(&dev, true);
+}
+
+//        .i2c_bus = DT_INST_ON_BUS(n, i2c),
+//        .i2c_bus = I2C_DT_SPEC_INST_GET(n),
+//        .i2c_bus = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(n))),
+#define AZOTEQ_IQS5XX_INST(n)                                                                      \
+    static struct azoteq_iqs5xx_data azoteq_iqs5xx_data_##n;                                       \
+    static const struct azoteq_iqs5xx_config azoteq_iqs5xx_config_##n = {                          \
+        .i2c_bus = I2C_DT_SPEC_INST_GET(n),                                                      \
+        .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(n), dr_gpios, {}),                                   \
+    };                                                                                             \
+    DEVICE_DT_INST_DEFINE(n, azoteq_iqs5xx_init, NULL, &azoteq_iqs5xx_data_##n, \
+                          &azoteq_iqs5xx_config_##n, POST_KERNEL, 95, NULL);
+
+DT_INST_FOREACH_STATUS_OKAY(AZOTEQ_IQS5XX_INST)
