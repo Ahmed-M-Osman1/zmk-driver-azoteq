@@ -6,5 +6,6 @@
            label = "AZOTEQ_IQS5XX";
            status = "okay";
            reg = <0x74>;
+           dr-gpios = <&gpio1 4 GPIO_ACTIVE_HIGH>;
   };
 };
