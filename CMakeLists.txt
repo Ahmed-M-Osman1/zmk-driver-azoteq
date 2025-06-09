@@ -5,5 +5,4 @@ zephyr_library()
 zephyr_include_directories(include)
 zephyr_library_sources(src/iqs5xx.c)
 zephyr_library_sources(src/iqs5xx_regdump.c)
-
-zephyr_dt_binding_path(dts/bindings)
+zephyr_module()
