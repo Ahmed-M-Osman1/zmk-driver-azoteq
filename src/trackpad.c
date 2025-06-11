@@ -2,12 +2,12 @@
  * @file trackpad.c
  * @brief Trackpad gesture handling for IQS5XX
  */
-#include <device.h>
-#include <init.h>
-#include <drivers/sensor.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/sensor.h>
 #include <iqs5xx.h>
-#include <logging/log.h>
-#include <devicetree.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/devicetree.h>
 #include <math.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
