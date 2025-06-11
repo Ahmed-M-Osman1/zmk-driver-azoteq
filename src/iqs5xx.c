@@ -346,25 +346,12 @@ static struct iqs5xx_data iqs5xx_data = {
 };
 
 static const struct iqs5xx_config iqs5xx_config = {
-#if DT_NODE_EXISTS(DT_NODELABEL(trackpad))
-    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_NODELABEL(trackpad), dr_gpios)),
-    .dr_pin = DT_GPIO_PIN(DT_NODELABEL(trackpad), dr_gpios),
-    .dr_flags = DT_GPIO_FLAGS(DT_NODELABEL(trackpad), dr_gpios),
-#else
     .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_DRV_INST(0), dr_gpios)),
     .dr_pin = DT_INST_GPIO_PIN(0, dr_gpios),
     .dr_flags = DT_INST_GPIO_FLAGS(0, dr_gpios),
-#endif
 };
 
-#if DT_NODE_EXISTS(DT_NODELABEL(trackpad))
-DEVICE_DT_DEFINE(DT_NODELABEL(trackpad), iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
-                 POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
-#define IQS5XX_DEVICE DEVICE_DT_GET(DT_NODELABEL(trackpad))
-#else
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
                       POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
-#define IQS5XX_DEVICE DEVICE_DT_GET(DT_DRV_INST(0))
-#endif
 
-K_THREAD_DEFINE(thread, 1024, iqs5xx_thread, IQS5XX_DEVICE, NULL, NULL, K_PRIO_COOP(10), 0, 0);
+K_THREAD_DEFINE(thread, 1024, iqs5xx_thread, DEVICE_DT_GET(DT_DRV_INST(0)), NULL, NULL, K_PRIO_COOP(10), 0, 0);

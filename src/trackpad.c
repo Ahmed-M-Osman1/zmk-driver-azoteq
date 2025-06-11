@@ -21,7 +21,7 @@ LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 // All your existing static variables:
 static bool isHolding = false;
 static const struct device *trackpad;
-static bool inputEventActive = false;
+// static bool inputEventActive = false;
 static uint8_t lastFingerCount = 0;
 static int64_t threeFingerPressTime = 0;
 static int16_t lastXScrollReport = 0;
@@ -36,7 +36,7 @@ struct {
 // Your gesture detection logic (modified to use input events):
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     // Get the input device
-    const struct device *input_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(trackpad_input));
+    const struct device *input_dev = DEVICE_DT_GET_ANY(zmk_input_listener);
     if (!input_dev) return;
 
    // bool multiTouch = data->finger_count > 1;
@@ -129,7 +129,7 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
 }
 
 static int trackpad_init(void) {
-    trackpad = DEVICE_DT_GET(DT_NODELABEL(trackpad));
+    trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
     if (trackpad == NULL) {
         LOG_ERR("Failed to get IQS5XX device");
         return -EINVAL;
