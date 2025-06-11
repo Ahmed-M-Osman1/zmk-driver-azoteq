@@ -73,7 +73,7 @@ static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8
  * @param len number of bytes to write
  * @return int
  */
-static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, uint8_t *buf,
+static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, const uint8_t *buf,
                         uint32_t num_bytes) {
 
     const struct iqs5xx_data *data = dev->data;
@@ -157,7 +157,7 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
 	ARG_UNUSED(unused3);
     struct iqs5xx_data *data = dev->data;
     struct iqs5xx_config *conf = dev->config;
-    int err = 0;
+    // int err = 0;
 
     // Initialize device registers - may be overwritten later in trackpad.c
     // struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
@@ -359,13 +359,21 @@ static struct iqs5xx_data iqs5xx_data = {
     .data_ready_handler = NULL
 };
 
+#define IQS5XX_NODE DT_NODELABEL(trackpad)
+
 static const struct iqs5xx_config iqs5xx_config = {
-    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_DRV_INST(0), dr_gpios)),
-    .dr_pin = DT_INST_GPIO_PIN(0, dr_gpios),
-    .dr_flags = DT_INST_GPIO_FLAGS(0, dr_gpios),
+    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(IQS5XX_NODE, dr_gpios)),
+    .dr_pin = DT_GPIO_PIN(IQS5XX_NODE, dr_gpios),
+    .dr_flags = DT_GPIO_FLAGS(IQS5XX_NODE, dr_gpios),
 };
 
-DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
-                      POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
+// static const struct iqs5xx_config iqs5xx_config = {
+//     .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_DRV_INST(0), dr_gpios)),
+//     .dr_pin = DT_INST_GPIO_PIN(0, dr_gpios),
+//     .dr_flags = DT_INST_GPIO_FLAGS(0, dr_gpios),
+// };
 
-K_THREAD_DEFINE(thread, 1024, iqs5xx_thread, DEVICE_DT_GET(DT_DRV_INST(0)), NULL, NULL, K_PRIO_COOP(10), 0, 0);
+DEVICE_DT_DEFINE(IQS5XX_NODE, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
+                 POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
+
+K_THREAD_DEFINE(thread, 1024, iqs5xx_thread, DEVICE_DT_GET(IQS5XX_NODE), NULL, NULL, K_PRIO_COOP(10), 0, 0);

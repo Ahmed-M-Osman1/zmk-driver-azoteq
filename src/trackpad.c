@@ -36,10 +36,10 @@ struct {
 // Your gesture detection logic (modified to use input events):
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     // Get the input device
-    const struct device *input_dev = DEVICE_DT_GET_OR_NULL(DT_CHILD(DT_DRV_INST(0), input));
+    const struct device *input_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(trackpad_input));
     if (!input_dev) return;
 
-    bool multiTouch = data->finger_count > 1;
+   // bool multiTouch = data->finger_count > 1;
     bool hasGesture = false;
 
     // Three finger detection
@@ -128,8 +128,8 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     lastFingerCount = data->finger_count;
 }
 
-static int trackpad_init(const struct device *_arg) {
-    trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
+static int trackpad_init(void) {
+    trackpad = DEVICE_DT_GET(DT_NODELABEL(trackpad));
     if (trackpad == NULL) {
         LOG_ERR("Failed to get IQS5XX device");
         return -EINVAL;
