@@ -2,38 +2,38 @@
 # SPDX-License-Identifier: MIT
 
 menuconfig IQS5XX
-	bool "IQS5XX Trackpad IC"
-	depends on GPIO
-	depends on I2C
-	help
-	  Enable driver for IQS5XX based-trackpads
+    bool "IQS5XX Trackpad IC"
+    depends on GPIO
+    depends on I2C
+    depends on ZMK_POINTING  # support ZMK pointing device
+    help
+      Enable driver for IQS5XX based-trackpads
 
 if IQS5XX
 
 config IQS5XX_THREAD_PRIORITY
-	int "Thread priority"
-	depends on IQS5XX_TRIGGER_OWN_THREAD
-	default 100
-	help
-	  Priority of thread used by the driver to handle interrupts.
+    int "Thread priority"
+    depends on IQS5XX_TRIGGER_OWN_THREAD
+    default 100
+    help
+      Priority of thread used by the driver to handle interrupts.
 
 config IQS5XX_THREAD_STACK_SIZE
-	int "Thread stack size"
-	depends on IQS5XX_TRIGGER_OWN_THREAD
-	default 1024
-	help
-	  Stack size of thread used by the driver to handle interrupts.
+    int "Thread stack size"
+    depends on IQS5XX_TRIGGER_OWN_THREAD
+    default 1024
+    help
+      Stack size of thread used by the driver to handle interrupts.
 
 choice
-	prompt "Interrupt or poll trackpad ready pin"
+    prompt "Interrupt or poll trackpad ready pin"
 
 config IQS5XX_POLL
-	bool "Poll data-ready pin"
+    bool "Poll data-ready pin"
 
 config IQS5XX_INTERRUPT
-	bool "Interrupt from data-ready pin"
+    bool "Interrupt from data-ready pin"
 
 endchoice
 
-
-endif
+endif # IQS5XX

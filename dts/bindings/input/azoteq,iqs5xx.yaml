@@ -21,3 +21,8 @@ properties:
 
   invert-y:
     type: boolean
+
+  # support input device
+  input:
+    type: phandle
+    description: Input device for trackpad events

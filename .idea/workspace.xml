@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="72925ee5-dc00-4818-a897-33435afc00f5" name="Changes" comment="fix TRACKPAD_NODE">
+      <change afterPath="$PROJECT_DIR$/src/trackpad.c" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/CMakeLists.txt" beforeDir="false" afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Kconfig" beforeDir="false" afterPath="$PROJECT_DIR$/Kconfig" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/dts/bindings/input/azoteq,iqs5xx.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/dts/bindings/input/azoteq,iqs5xx.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/iqs5xx.c" beforeDir="false" afterPath="$PROJECT_DIR$/src/iqs5xx.c" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 5
+}</component>
+  <component name="ProjectId" id="2yGpbC2uUuuwP33cnoXYDFoNvPe" />
+  <component name="ProjectViewState">
+    <option name="autoscrollToSource" value="true" />
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="openDirectoriesWithSingleClick" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;osos-driver&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-e768b9ed790e-JavaScript-WS-243.21565.180" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task id="LOCAL-00001" summary="add azoteq,iqs5xx.yaml file">
+      <option name="closed" value="true" />
+      <created>1749133878496</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1749133878496</updated>
+    </task>
+    <task id="LOCAL-00002" summary="remove dr-gpios">
+      <option name="closed" value="true" />
+      <created>1749136421498</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1749136421498</updated>
+    </task>
+    <task id="LOCAL-00003" summary="add dr-gpios">
+      <option name="closed" value="true" />
+      <created>1749137330876</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1749137330876</updated>
+    </task>
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="72925ee5-dc00-4818-a897-33435afc00f5" name="Changes" comment="add dr-gpios" />
+      <created>1749470834461</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1749470834461</updated>
+      <workItem from="1749470836550" duration="5623000" />
+      <workItem from="1749645281249" duration="1129000" />
+    </task>
+    <task id="LOCAL-00004" summary="add zephyr_dt_binding_path">
+      <option name="closed" value="true" />
+      <created>1749473633049</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1749473633049</updated>
+    </task>
+    <task id="LOCAL-00005" summary="add zephyr_module instude of binding.">
+      <option name="closed" value="true" />
+      <created>1749474241845</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1749474241845</updated>
+    </task>
+    <task id="LOCAL-00006" summary="fix CMakeLists.txt">
+      <option name="closed" value="true" />
+      <created>1749474912711</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1749474912711</updated>
+    </task>
+    <task id="LOCAL-00007" summary="fix TRACKPAD_NODE">
+      <option name="closed" value="true" />
+      <created>1749475289169</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1749475289169</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="remove dump and rename .h file" />
+    <MESSAGE value="add azoteq,iqs5xx.yaml file" />
+    <MESSAGE value="remove dr-gpios" />
+    <MESSAGE value="add dr-gpios" />
+    <MESSAGE value="add zephyr_dt_binding_path" />
+    <MESSAGE value="add zephyr_module instude of binding." />
+    <MESSAGE value="fix CMakeLists.txt" />
+    <MESSAGE value="fix TRACKPAD_NODE" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix TRACKPAD_NODE" />
+  </component>
+</project>
