@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2020 The ZMK Contributors
  *
@@ -16,8 +15,6 @@
 #include <zephyr/devicetree.h>
 #include "iqs5xx.h"
 
-
-// DT_DRV_INST(0);
 LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 static int iqs_regdump_err = 0;
@@ -42,7 +39,6 @@ struct iqs5xx_reg_config iqs5xx_reg_config_default () {
 
     regconf.initScrollDistance =        25;
 
-
     return regconf;
 }
 
@@ -59,7 +55,6 @@ struct iqs5xx_reg_config iqs5xx_reg_config_default () {
 static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8_t *read_buf,
                            const uint8_t len) {
     const struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *config = dev->config;
     uint16_t nstart = (start << 8 ) | (start >> 8);
     return i2c_write_read(data->i2c, AZOTEQ_IQS5XX_ADDR, &nstart, sizeof(nstart), read_buf, len);
 }
@@ -96,14 +91,12 @@ static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, con
 }
 
 static int iqs5xx_reg_dump (const struct device *dev) {
-
     return iqs5xx_write(dev, IQS5XX_REG_DUMP_START_ADDRESS, _iqs5xx_regdump, IQS5XX_REG_DUMP_SIZE);
 }
 
 static int iqs5xx_attr_set(const struct device *dev, enum sensor_channel chan,
                            enum sensor_attribute attr, const struct sensor_value *val) {
-	LOG_ERR("\nSetting attributes\n");
-    const struct iqs5xx_config *config = dev->config;
+    LOG_ERR("\nSetting attributes\n");
     return 0;
 }
 
@@ -116,12 +109,10 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
     struct iqs5xx_data *data = dev->data;
 
     int res = iqs5xx_seq_read(dev, GestureEvents0_adr, buffer, 44);
-	iqs5xx_write(dev, END_WINDOW, 0, 1);
+    iqs5xx_write(dev, END_WINDOW, 0, 1);
     if (res < 0) {
-        //LOG_ERR("\ntrackpad res: %d", res);
         return res;
     }
-
 
     // Gestures
     data->raw_data.gestures0 =      buffer[0];
@@ -153,19 +144,18 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
 
 static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
     const struct device *dev = arg;
-	ARG_UNUSED(unused2);
-	ARG_UNUSED(unused3);
+    ARG_UNUSED(unused2);
+    ARG_UNUSED(unused3);
     struct iqs5xx_data *data = dev->data;
-    struct iqs5xx_config *conf = dev->config;
-    // int err = 0;
+    const struct iqs5xx_config *conf = dev->config;
 
-    // Initialize device registers - may be overwritten later in trackpad.c
-    // struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
+    // Initialize device registers
+    struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
 
-    // err = iqs5xx_registers_init(dev, &iqs5xx_registers);
-    // if(err) {
-    // LOG_ERR("Failed to initialize IQS5xx registers!\r\n");
-    // }
+    int err = iqs5xx_registers_init(dev, &iqs5xx_registers);
+    if(err) {
+        LOG_ERR("Failed to initialize IQS5xx registers!\r\n");
+    }
 
     int nstate = 0;
     while (1) {
@@ -219,7 +209,6 @@ int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handle
  */
 static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     struct iqs5xx_data *data = CONTAINER_OF(cb, struct iqs5xx_data, dr_cb);
-    struct iqs5xx_config *config = data->dev->config;
     k_sem_give(&data->gpio_sem);
 }
 
@@ -232,7 +221,7 @@ static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, 
 int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_config *config) {
     // TODO: Retry if error on write
     struct iqs5xx_data *data = dev->data;
-    struct iqs5xx_config *conf = dev->config;
+    const struct iqs5xx_config *conf = dev->config;
 
     k_mutex_lock(&data->i2c_mutex, K_MSEC(5000));
 
@@ -293,7 +282,6 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
 
     err |= iqs5xx_write(dev, TouchSnapDb_adr, &config->debounce, 1);
 
-
     //wbuff[0] = ND_ENABLE;
     wbuff[0] = 0;
     // Set noise reduction
@@ -327,14 +315,13 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
 static int iqs5xx_init(const struct device *dev) {
     struct iqs5xx_data *data = dev->data;
     const struct iqs5xx_config *config = dev->config;
-    int err = 0;
 
     data->dev = dev;
 
     k_mutex_init(&data->i2c_mutex);
 
     // Configure data ready pin
-	gpio_pin_configure(config->dr_port, config->dr_pin, GPIO_INPUT | config->dr_flags);
+    gpio_pin_configure(config->dr_port, config->dr_pin, GPIO_INPUT | config->dr_flags);
 
     #if CONFIG_IQS5XX_INTERRUPT
 
@@ -344,7 +331,7 @@ static int iqs5xx_init(const struct device *dev) {
     // Initialize interrupt callback
     gpio_init_callback(&data->dr_cb, iqs5xx_callback, BIT(config->dr_pin));
     // Add callback
-	err = gpio_add_callback(config->dr_port, &data->dr_cb);
+    int err = gpio_add_callback(config->dr_port, &data->dr_cb);
 
     // Configure data ready interrupt
     err = gpio_pin_interrupt_configure(config->dr_port, config->dr_pin, GPIO_INT_EDGE_TO_ACTIVE);
@@ -353,27 +340,31 @@ static int iqs5xx_init(const struct device *dev) {
     return 0;
 }
 
-
 static struct iqs5xx_data iqs5xx_data = {
     .i2c = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(0))),
     .data_ready_handler = NULL
 };
 
-#define IQS5XX_NODE DT_NODELABEL(trackpad)
-
 static const struct iqs5xx_config iqs5xx_config = {
-    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(IQS5XX_NODE, dr_gpios)),
-    .dr_pin = DT_GPIO_PIN(IQS5XX_NODE, dr_gpios),
-    .dr_flags = DT_GPIO_FLAGS(IQS5XX_NODE, dr_gpios),
+#if DT_NODE_EXISTS(DT_NODELABEL(trackpad))
+    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_NODELABEL(trackpad), dr_gpios)),
+    .dr_pin = DT_GPIO_PIN(DT_NODELABEL(trackpad), dr_gpios),
+    .dr_flags = DT_GPIO_FLAGS(DT_NODELABEL(trackpad), dr_gpios),
+#else
+    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_DRV_INST(0), dr_gpios)),
+    .dr_pin = DT_INST_GPIO_PIN(0, dr_gpios),
+    .dr_flags = DT_INST_GPIO_FLAGS(0, dr_gpios),
+#endif
 };
 
-// static const struct iqs5xx_config iqs5xx_config = {
-//     .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_DRV_INST(0), dr_gpios)),
-//     .dr_pin = DT_INST_GPIO_PIN(0, dr_gpios),
-//     .dr_flags = DT_INST_GPIO_FLAGS(0, dr_gpios),
-// };
-
-DEVICE_DT_DEFINE(IQS5XX_NODE, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
+#if DT_NODE_EXISTS(DT_NODELABEL(trackpad))
+DEVICE_DT_DEFINE(DT_NODELABEL(trackpad), iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
                  POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
+#define IQS5XX_DEVICE DEVICE_DT_GET(DT_NODELABEL(trackpad))
+#else
+DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
+                      POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
+#define IQS5XX_DEVICE DEVICE_DT_GET(DT_DRV_INST(0))
+#endif
 
-K_THREAD_DEFINE(thread, 1024, iqs5xx_thread, DEVICE_DT_GET(IQS5XX_NODE), NULL, NULL, K_PRIO_COOP(10), 0, 0);
+K_THREAD_DEFINE(thread, 1024, iqs5xx_thread, IQS5XX_DEVICE, NULL, NULL, K_PRIO_COOP(10), 0, 0);
