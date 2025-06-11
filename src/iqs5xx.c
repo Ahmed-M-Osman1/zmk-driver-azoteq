@@ -345,10 +345,11 @@ static struct iqs5xx_data iqs5xx_data = {
     .data_ready_handler = NULL
 };
 
+// hard coded data ready pin and port for now.
 static const struct iqs5xx_config iqs5xx_config = {
-    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_DRV_INST(0), dr_gpios)),
-    .dr_pin = DT_INST_GPIO_PIN(0, dr_gpios),
-    .dr_flags = DT_INST_GPIO_FLAGS(0, dr_gpios),
+    .dr_port = DEVICE_DT_GET(DT_NODELABEL(gpio0)),
+    .dr_pin = 29,
+    .dr_flags = GPIO_ACTIVE_HIGH,
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
