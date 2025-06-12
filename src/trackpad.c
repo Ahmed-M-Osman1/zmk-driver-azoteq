@@ -14,9 +14,10 @@
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// All your existing defines:
-#define TRACKPAD_THREE_FINGER_CLICK_TIME    300
-#define SCROLL_REPORT_DISTANCE              35
+// Tuned defines for better performance:
+#define TRACKPAD_THREE_FINGER_CLICK_TIME    200   // Reduced for responsiveness
+#define SCROLL_REPORT_DISTANCE              15    // Reduced for smoother scrolling
+#define MOVEMENT_THRESHOLD                  0.5f   // Lower threshold for smoother movement
 
 // All your existing static variables:
 static bool isHolding = false;
@@ -25,7 +26,7 @@ static uint8_t lastFingerCount = 0;
 static int64_t threeFingerPressTime = 0;
 static int16_t lastXScrollReport = 0;
 static bool threeFingersPressed = false;
-static uint8_t mouseSensitivity = 128;
+static uint8_t mouseSensitivity = 200;  // Increased for better sensitivity
 
 struct {
     float x;
@@ -37,7 +38,7 @@ static const struct device *trackpad_device = NULL;
 
 // Send events through the trackpad device
 static void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
-    LOG_DBG("ahmed ::====:: Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
+    LOG_DBG("ahmed :::: Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
 
     if (trackpad_device) {
         input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
@@ -114,20 +115,26 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         }
     }
 
-    // Movement handling
+    // Movement handling - FIXED AXIS MAPPING
     if(!hasGesture && data->finger_count == 1) {
         float sensMp = (float)mouseSensitivity/128.0F;
-        accumPos.x += -data->ry * sensMp;
-        accumPos.y += data->rx * sensMp;
-        int16_t xp = accumPos.x;
-        int16_t yp = accumPos.y;
 
-        if(fabsf(accumPos.x) >= 1 || fabsf(accumPos.y) >= 1) {
+        // FIXED: Correct axis mapping - don't swap rx/ry
+        accumPos.x += data->rx * sensMp;      // rx maps to X movement
+        accumPos.y += -data->ry * sensMp;     // ry maps to Y movement (inverted)
+
+        int16_t xp = (int16_t)accumPos.x;
+        int16_t yp = (int16_t)accumPos.y;
+
+        // Lower threshold for smoother movement
+        if(fabsf(accumPos.x) >= MOVEMENT_THRESHOLD || fabsf(accumPos.y) >= MOVEMENT_THRESHOLD) {
             // Send movement events
             send_input_event(INPUT_EV_REL, INPUT_REL_X, xp, false);
             send_input_event(INPUT_EV_REL, INPUT_REL_Y, yp, true);
-            accumPos.x = 0;
-            accumPos.y = 0;
+
+            // Reset accumulation
+            accumPos.x -= xp;  // Keep fractional part
+            accumPos.y -= yp;  // Keep fractional part
         }
     }
 

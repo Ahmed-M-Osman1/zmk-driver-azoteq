@@ -23,23 +23,23 @@ static int iqs_regdump_err = 0;
 struct iqs5xx_reg_config iqs5xx_reg_config_default () {
     struct iqs5xx_reg_config regconf;
 
-    regconf.activeRefreshRate =         10;
-    regconf.idleRefreshRate =           50;
-    regconf.singleFingerGestureMask =   GESTURE_SINGLE_TAP | GESTURE_TAP_AND_HOLD;
-    regconf.multiFingerGestureMask =    GESTURE_TWO_FINGER_TAP | GESTURE_SCROLLG;
-    regconf.tapTime =                   150;
-    regconf.tapDistance =               25;
-    regconf.touchMultiplier =           0;
-    regconf.debounce =                  0;
-    regconf.i2cTimeout =                4;
-    regconf.filterSettings =            MAV_FILTER | IIR_FILTER /* | IIR_SELECT static mode */;
-    regconf.filterDynBottomBeta =        22;
-    regconf.filterDynLowerSpeed =        19;
-    regconf.filterDynUpperSpeed =        140;
+        regconf.activeRefreshRate =         5;    // Increased from 10 for faster response
+        regconf.idleRefreshRate =           20;   // Increased from 50
+        regconf.singleFingerGestureMask =   GESTURE_SINGLE_TAP | GESTURE_TAP_AND_HOLD;
+        regconf.multiFingerGestureMask =    GESTURE_TWO_FINGER_TAP | GESTURE_SCROLLG;
+        regconf.tapTime =                   100;  // Reduced for faster taps
+        regconf.tapDistance =               15;   // Reduced for more sensitive taps
+        regconf.touchMultiplier =           0;
+        regconf.debounce =                  0;
+        regconf.i2cTimeout =                2;    // Reduced timeout
+        regconf.filterSettings =            MAV_FILTER | IIR_FILTER;
+        regconf.filterDynBottomBeta =        15;  // Reduced for less filtering
+        regconf.filterDynLowerSpeed =        10;  // Reduced for faster response
+        regconf.filterDynUpperSpeed =        200; // Increased for better fast movements
 
-    regconf.initScrollDistance =        25;
+        regconf.initScrollDistance =        10;   // Reduced for easier scrolling
 
-    return regconf;
+        return regconf;
 }
 
 /**
