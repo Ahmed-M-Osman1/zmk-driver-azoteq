@@ -1,6 +1,6 @@
 /*
- * Fixed IQS5XX Driver with Proper Device Tree GPIO Configuration
  * Copyright (c) 2020 The ZMK Contributors
+ *
  * SPDX-License-Identifier: MIT
  */
 #define DT_DRV_COMPAT azoteq_iqs5xx
@@ -57,7 +57,11 @@ static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8
                            const uint8_t len) {
     const struct iqs5xx_data *data = dev->data;
     uint16_t nstart = (start << 8 ) | (start >> 8);
-    return i2c_write_read(data->i2c, AZOTEQ_IQS5XX_ADDR, &nstart, sizeof(nstart), read_buf, len);
+    int ret = i2c_write_read(data->i2c, AZOTEQ_IQS5XX_ADDR, &nstart, sizeof(nstart), read_buf, len);
+    if (ret < 0) {
+        LOG_WRN("I2C read failed: %d", ret);
+    }
+    return ret;
 }
 
 /**
@@ -82,6 +86,9 @@ static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, con
     msg[1].flags = I2C_MSG_WRITE | I2C_MSG_STOP;
 
     int err = i2c_transfer(data->i2c, msg, 2, AZOTEQ_IQS5XX_ADDR);
+    if (err < 0) {
+        LOG_WRN("I2C write failed: %d", err);
+    }
     return err;
 }
 
@@ -142,7 +149,7 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
     ARG_UNUSED(unused2);
     ARG_UNUSED(unused3);
     struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *conf = dev->config;
+    const struct iqs5xx_config *config = dev->config;
 
     // Initialize device registers
     struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
@@ -155,17 +162,13 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
     int nstate = 0;
     while (1) {
         #ifdef CONFIG_IQS5XX_POLL
-            // Reduced sleep time for better responsiveness
             k_msleep(2);
 
-            // Poll data ready pin
-            nstate = gpio_pin_get(conf->dr_port, conf->dr_pin);
+            // Poll data ready pin using dt_spec
+            nstate = gpio_pin_get_dt(&config->dr_gpio);
 
             if(nstate) {
-                // Fetch the sample
                 iqs5xx_sample_fetch(dev);
-
-                // Trigger
                 if(data->data_ready_handler != NULL) {
                     data->data_ready_handler(dev, &data->raw_data);
                 }
@@ -173,9 +176,8 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
         #elif CONFIG_IQS5XX_INTERRUPT
             k_sem_take(&data->gpio_sem, K_FOREVER);
 
-            k_mutex_lock(&data->i2c_mutex, K_MSEC(100)); // Reduced timeout
+            k_mutex_lock(&data->i2c_mutex, K_MSEC(100));
             iqs5xx_sample_fetch(dev);
-            // Trigger
             if(data->data_ready_handler != NULL) {
                 data->data_ready_handler(dev, &data->raw_data);
             }
@@ -206,29 +208,29 @@ static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, 
  */
 int iqs5xx_registers_init(const struct device *dev, const struct iqs5xx_reg_config *config) {
     struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *conf = dev->config;
+    const struct iqs5xx_config *dev_config = dev->config;
 
-    k_mutex_lock(&data->i2c_mutex, K_MSEC(2000)); // Reduced timeout
+    k_mutex_lock(&data->i2c_mutex, K_MSEC(2000));
 
-    // Wait for dataready with shorter intervals
-    while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
-        k_usleep(100); // Reduced from 200us
+    // Wait for dataready using dt_spec
+    while(!gpio_pin_get_dt(&dev_config->dr_gpio)) {
+        k_usleep(100);
     }
 
     uint8_t buf = RESET_TP;
     // Reset device
     iqs5xx_write(dev, SystemControl1_adr, &buf, 1);
     iqs5xx_write(dev, END_WINDOW, 0, 1);
-    k_msleep(5); // Reduced reset time
+    k_msleep(5);
 
-    while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
+    while(!gpio_pin_get_dt(&dev_config->dr_gpio)) {
         k_usleep(100);
     }
 
     // Write register dump
     iqs_regdump_err = iqs5xx_reg_dump(dev);
 
-    while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
+    while(!gpio_pin_get_dt(&dev_config->dr_gpio)) {
         k_usleep(100);
     }
 
@@ -296,17 +298,16 @@ static int iqs5xx_init(const struct device *dev) {
     const struct iqs5xx_config *config = dev->config;
 
     data->dev = dev;
-
     k_mutex_init(&data->i2c_mutex);
 
-    // Verify GPIO device is ready
-    if (!device_is_ready(config->dr_port)) {
+    // Check if DR GPIO is ready
+    if (!gpio_is_ready_dt(&config->dr_gpio)) {
         LOG_ERR("DR GPIO device not ready");
         return -ENODEV;
     }
 
-    // Configure data ready pin
-    int ret = gpio_pin_configure(config->dr_port, config->dr_pin, GPIO_INPUT | config->dr_flags);
+    // Configure data ready pin using dt_spec
+    int ret = gpio_pin_configure_dt(&config->dr_gpio, GPIO_INPUT);
     if (ret < 0) {
         LOG_ERR("Failed to configure DR pin: %d", ret);
         return ret;
@@ -317,38 +318,50 @@ static int iqs5xx_init(const struct device *dev) {
     k_sem_init(&data->gpio_sem, 0, UINT_MAX);
 
     // Initialize interrupt callback
-    gpio_init_callback(&data->dr_cb, iqs5xx_callback, BIT(config->dr_pin));
+    gpio_init_callback(&data->dr_cb, iqs5xx_callback, BIT(config->dr_gpio.pin));
 
     // Add callback
-    ret = gpio_add_callback(config->dr_port, &data->dr_cb);
+    ret = gpio_add_callback(config->dr_gpio.port, &data->dr_cb);
     if (ret < 0) {
         LOG_ERR("Failed to add GPIO callback: %d", ret);
         return ret;
     }
 
     // Configure data ready interrupt
-    ret = gpio_pin_interrupt_configure(config->dr_port, config->dr_pin, GPIO_INT_EDGE_TO_ACTIVE);
+    ret = gpio_pin_interrupt_configure_dt(&config->dr_gpio, GPIO_INT_EDGE_TO_ACTIVE);
     if (ret < 0) {
         LOG_ERR("Failed to configure DR interrupt: %d", ret);
         return ret;
     }
     #endif
 
+    LOG_INF("IQS5XX driver initialized successfully");
     return 0;
 }
 
-static struct iqs5xx_data iqs5xx_data = {
-    .i2c = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(0))),
-    .data_ready_handler = NULL
-};
+// Device instantiation macros following gesture repo pattern
+#define IQS5XX_CONFIG(inst)                                                   \
+    static const struct iqs5xx_config iqs5xx_config_##inst = {                \
+        .dr_gpio = GPIO_DT_SPEC_INST_GET(inst, dr_gpios),                     \
+        .invert_x = DT_INST_PROP(inst, invert_x),                             \
+        .invert_y = DT_INST_PROP(inst, invert_y),                             \
+    };
 
-static const struct iqs5xx_config iqs5xx_config = {
-    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_DRV_INST(0), dr_gpios)),
-    .dr_pin = DT_GPIO_PIN(DT_DRV_INST(0), dr_gpios),
-    .dr_flags = DT_GPIO_FLAGS(DT_DRV_INST(0), dr_gpios),
-};
+#define IQS5XX_DEFINE(inst)                                                   \
+    static struct iqs5xx_data iqs5xx_data_##inst = {                          \
+        .i2c = DEVICE_DT_GET(DT_INST_BUS(inst)),                              \
+        .data_ready_handler = NULL                                             \
+    };                                                                         \
+                                                                               \
+    IQS5XX_CONFIG(inst);                                                       \
+                                                                               \
+    DEVICE_DT_INST_DEFINE(inst, iqs5xx_init, NULL,                           \
+                          &iqs5xx_data_##inst, &iqs5xx_config_##inst,         \
+                          POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY,       \
+                          NULL);                                               \
+                                                                               \
+    K_THREAD_DEFINE(iqs5xx_thread_##inst, 1024, iqs5xx_thread,               \
+                    DEVICE_DT_INST_GET(inst), NULL, NULL,                     \
+                    K_PRIO_COOP(10), 0, 0);
 
-DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
-                      POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
-
-K_THREAD_DEFINE(thread, 1024, iqs5xx_thread, DEVICE_DT_GET(DT_DRV_INST(0)), NULL, NULL, K_PRIO_COOP(10), 0, 0);
+DT_INST_FOREACH_STATUS_OKAY(IQS5XX_DEFINE)

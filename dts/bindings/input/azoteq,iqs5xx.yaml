@@ -18,9 +18,11 @@ properties:
 
   invert-x:
     type: boolean
+    description: Invert X axis movement
 
   invert-y:
     type: boolean
+    description: Invert Y axis movement
 
   # support input device
   input:
