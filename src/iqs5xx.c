@@ -94,12 +94,6 @@ static int iqs5xx_reg_dump (const struct device *dev) {
     return iqs5xx_write(dev, IQS5XX_REG_DUMP_START_ADDRESS, _iqs5xx_regdump, IQS5XX_REG_DUMP_SIZE);
 }
 
-static int iqs5xx_attr_set(const struct device *dev, enum sensor_channel chan,
-                           enum sensor_attribute attr, const struct sensor_value *val) {
-    LOG_ERR("\nSetting attributes\n");
-    return 0;
-}
-
 /**
  * @brief Read data from IQS5XX
 */
@@ -147,7 +141,7 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
     ARG_UNUSED(unused2);
     ARG_UNUSED(unused3);
     struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *conf = dev->config;
+    // const struct iqs5xx_config *conf = dev->config;
 
     // Initialize device registers
     struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
@@ -157,7 +151,7 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
         LOG_ERR("Failed to initialize IQS5xx registers!\r\n");
     }
 
-    int nstate = 0;
+    // int nstate = 0;
     while (1) {
         // Sleep for maximum possible time to maximize processor time for other tasks
         #ifdef CONFIG_IQS5XX_POLL

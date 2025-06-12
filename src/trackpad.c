@@ -13,6 +13,10 @@
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include "iqs5xx.h"
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846f
+#endif
+
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 // Enhanced gesture configuration
@@ -100,7 +104,7 @@ static const struct device *trackpad_device = NULL;
 
 // Helper functions
 static float calculate_angle(uint16_t x, uint16_t y, uint16_t center_x, uint16_t center_y) {
-    return atan2f((float)(x - center_x), (float)(y - center_y)) * 180.0f / M_PI;
+    return atan2f((float)(x - center_x), (float)(y - center_y)) * 180.0f / 3.14159265358979323846f;
 }
 
 static bool is_in_scroll_zone(uint16_t x, uint16_t y) {
