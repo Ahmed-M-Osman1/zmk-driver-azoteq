@@ -38,7 +38,7 @@ static const struct device *input_dev = NULL;
 // Dummy input report function for now - this will be replaced with proper input device later
 static void input_report_dummy(const struct device *dev, uint8_t type, uint16_t code, int32_t value, bool sync, k_timeout_t timeout) {
     // For now, just log the input events
-    LOG_DBG("Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
+    LOG_DBG("ahmed :::: Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
 
     // TODO: Replace this with proper input device handling
     // This is where you would normally call the ZMK input system

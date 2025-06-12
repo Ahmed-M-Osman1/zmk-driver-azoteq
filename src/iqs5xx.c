@@ -347,8 +347,8 @@ static struct iqs5xx_data iqs5xx_data = {
 
 // hard coded data ready pin and port for now.
 static const struct iqs5xx_config iqs5xx_config = {
-    .dr_port = DEVICE_DT_GET(DT_NODELABEL(gpio0)),
-    .dr_pin = 29,
+    .dr_port = DEVICE_DT_GET(DT_NODELABEL(gpio1)),
+    .dr_pin = 6,
     .dr_flags = GPIO_ACTIVE_HIGH,
 };
 
