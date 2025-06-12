@@ -32,22 +32,16 @@ struct {
     float y;
 } accumPos;
 
-// Simple input device reference
-static const struct device *input_dev = NULL;
+// Reference to the trackpad device which will have the input listener
+static const struct device *trackpad_device = NULL;
 
-// Since we can't access ZMK headers directly in external modules,
-// we'll use the input system which ZMK will handle
+// Send events through the trackpad device
 static void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
-    LOG_DBG("ahmed :::: Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
+    LOG_DBG("ahmed ::====:: Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
 
-    // Try to get an input device - this might work since input is part of Zephyr
-    if (!input_dev) {
-        // For now, just log - we'll need ZMK integration later
-        return;
+    if (trackpad_device) {
+        input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
     }
-
-    // Use Zephyr's input system which ZMK should pick up
-    input_report(input_dev, type, code, value, sync, K_NO_WAIT);
 }
 
 // Your gesture detection logic (now using real ZMK mouse):
@@ -146,6 +140,9 @@ static int trackpad_init(void) {
         LOG_ERR("Failed to get IQS5XX device");
         return -EINVAL;
     }
+
+    // Store reference for input events
+    trackpad_device = trackpad;
 
     accumPos.x = 0;
     accumPos.y = 0;
