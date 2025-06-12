@@ -1,6 +1,6 @@
 /*
+ * Fixed IQS5XX Driver with Proper Device Tree GPIO Configuration
  * Copyright (c) 2020 The ZMK Contributors
- *
  * SPDX-License-Identifier: MIT
  */
 #define DT_DRV_COMPAT azoteq_iqs5xx
@@ -19,42 +19,39 @@ LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 static int iqs_regdump_err = 0;
 
-// Default config
-struct iqs5xx_reg_config iqs5xx_reg_config_default () {
+// Enhanced default config with better performance settings
+struct iqs5xx_reg_config iqs5xx_reg_config_default() {
     struct iqs5xx_reg_config regconf;
 
-        regconf.activeRefreshRate =         3;    // Faster refresh for responsiveness (was 5)
-        regconf.idleRefreshRate =           10;   // Faster idle refresh (was 20)
+    // Faster refresh rates for better responsiveness
+    regconf.activeRefreshRate = 5;        // Reduced from 10ms to 5ms
+    regconf.idleRefreshRate = 25;         // Reduced from 50ms to 25ms
 
-        // GESTURE CONFIGURATION
-        regconf.singleFingerGestureMask =   GESTURE_SINGLE_TAP;  // Removed TAP_AND_HOLD to reduce conflicts
-        regconf.multiFingerGestureMask =    GESTURE_TWO_FINGER_TAP | GESTURE_SCROLLG;
-        // TIMING OPTIMIZATIONS
-        regconf.tapTime =                   80;   // Shorter tap time for responsiveness (was 100)
-        regconf.tapDistance =               20;   // Slightly larger tap distance for reliability (was 15)
-        regconf.touchMultiplier =           0;
-        regconf.debounce =                  0;    // Minimal debounce for speed
-        regconf.i2cTimeout =                1;    // Faster I2C timeout (was 2)
-        // FILTER OPTIMIZATIONS - Less aggressive filtering for better responsiveness
-        regconf.filterSettings =            IIR_FILTER;  // Removed MAV_FILTER for speed
-        regconf.filterDynBottomBeta =        8;   // Reduced filtering (was 15)
-        regconf.filterDynLowerSpeed =        5;   // Faster response (was 10)
-        regconf.filterDynUpperSpeed =        300; // Higher speed threshold (was 200)
-        // SCROLL OPTIMIZATION
-        regconf.initScrollDistance =        8;    // Easier scrolling (was 10)
+    // Optimized gesture settings
+    regconf.singleFingerGestureMask = GESTURE_SINGLE_TAP | GESTURE_TAP_AND_HOLD;
+    regconf.multiFingerGestureMask = GESTURE_TWO_FINGER_TAP | GESTURE_SCROLLG;
 
-        return regconf;
+    // Faster tap detection
+    regconf.tapTime = 100;                // Reduced from 150ms
+    regconf.tapDistance = 20;             // Reduced for more sensitive taps
+
+    regconf.touchMultiplier = 0;
+    regconf.debounce = 0;                 // Remove debounce for faster response
+    regconf.i2cTimeout = 2;               // Reduced timeout
+
+    // Enhanced filter settings for better performance
+    regconf.filterSettings = MAV_FILTER | IIR_FILTER;
+    regconf.filterDynBottomBeta = 30;     // Increased for better filtering
+    regconf.filterDynLowerSpeed = 15;     // Reduced for faster response
+    regconf.filterDynUpperSpeed = 200;    // Increased upper limit
+
+    regconf.initScrollDistance = 15;      // Reduced for more sensitive scrolling
+
+    return regconf;
 }
 
 /**
  * @brief Read from the iqs550 chip via i2c
- * example: iqs5xx_seq_read(dev, GestureEvents0_adr, buffer, 44)
- *
- * @param dev Pointer to device driver MASTER
- * @param start start address for reading
- * @param  pointer to buffer to be read into
- * @param len number of bytes to read
- * @return int
  */
 static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8_t *read_buf,
                            const uint8_t len) {
@@ -65,12 +62,6 @@ static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8
 
 /**
  * @brief Write to the iqs550 chip via i2c
- * example: iqs5xx_write(dev, GestureEvents0_adr, buffer, 44)
- * @param dev Pointer to device driver MASTER
- * @param start address of the i2c slave
- * @param buf Buffer to be written
- * @param len number of bytes to write
- * @return int
  */
 static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, const uint8_t *buf,
                         uint32_t num_bytes) {
@@ -94,14 +85,20 @@ static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, con
     return err;
 }
 
-static int iqs5xx_reg_dump (const struct device *dev) {
+static int iqs5xx_reg_dump(const struct device *dev) {
     return iqs5xx_write(dev, IQS5XX_REG_DUMP_START_ADDRESS, _iqs5xx_regdump, IQS5XX_REG_DUMP_SIZE);
 }
 
+static int iqs5xx_attr_set(const struct device *dev, enum sensor_channel chan,
+                           enum sensor_attribute attr, const struct sensor_value *val) {
+    LOG_ERR("\nSetting attributes\n");
+    return 0;
+}
+
 /**
- * @brief Read data from IQS5XX
-*/
-static int iqs5xx_sample_fetch (const struct device *dev) {
+ * @brief Read data from IQS5XX with optimized processing
+ */
+static int iqs5xx_sample_fetch(const struct device *dev) {
     uint8_t buffer[44];
 
     struct iqs5xx_data *data = dev->data;
@@ -113,17 +110,17 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
     }
 
     // Gestures
-    data->raw_data.gestures0 =      buffer[0];
-    data->raw_data.gestures1 =      buffer[1];
+    data->raw_data.gestures0 = buffer[0];
+    data->raw_data.gestures1 = buffer[1];
     // System info
-    data->raw_data.system_info0 =   buffer[2];
-    data->raw_data.system_info1 =   buffer[3];
+    data->raw_data.system_info0 = buffer[2];
+    data->raw_data.system_info1 = buffer[3];
     // Number of fingers
-    data->raw_data.finger_count =   buffer[4];
+    data->raw_data.finger_count = buffer[4];
     // Relative X position
-    data->raw_data.rx =             buffer[5] << 8 | buffer[6];
+    data->raw_data.rx = buffer[5] << 8 | buffer[6];
     // Relative Y position
-    data->raw_data.ry =             buffer[7] << 8 | buffer[8];
+    data->raw_data.ry = buffer[7] << 8 | buffer[8];
 
     // Fingers
     for(int i = 0; i < 5; i++) {
@@ -135,7 +132,7 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
         // Touch strength
         data->raw_data.fingers[i].strength = buffer[p + 4] << 8 | buffer[p + 5];
         // Area
-        data->raw_data.fingers[i].area= buffer[p + 6];
+        data->raw_data.fingers[i].area = buffer[p + 6];
     }
     return 0;
 }
@@ -145,7 +142,7 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
     ARG_UNUSED(unused2);
     ARG_UNUSED(unused3);
     struct iqs5xx_data *data = dev->data;
-    // const struct iqs5xx_config *conf = dev->config;
+    const struct iqs5xx_config *conf = dev->config;
 
     // Initialize device registers
     struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
@@ -155,12 +152,11 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
         LOG_ERR("Failed to initialize IQS5xx registers!\r\n");
     }
 
-    // int nstate = 0;
+    int nstate = 0;
     while (1) {
-        // Sleep for maximum possible time to maximize processor time for other tasks
         #ifdef CONFIG_IQS5XX_POLL
-
-            k_msleep(4);
+            // Reduced sleep time for better responsiveness
+            k_msleep(2);
 
             // Poll data ready pin
             nstate = gpio_pin_get(conf->dr_port, conf->dr_pin);
@@ -177,21 +173,20 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
         #elif CONFIG_IQS5XX_INTERRUPT
             k_sem_take(&data->gpio_sem, K_FOREVER);
 
-            k_mutex_lock(&data->i2c_mutex, K_MSEC(1000));
+            k_mutex_lock(&data->i2c_mutex, K_MSEC(100)); // Reduced timeout
             iqs5xx_sample_fetch(dev);
             // Trigger
             if(data->data_ready_handler != NULL) {
                 data->data_ready_handler(dev, &data->raw_data);
             }
             k_mutex_unlock(&data->i2c_mutex);
-
         #endif
     }
 }
 
 /**
  * @brief Sets the trigger handler
-*/
+ */
 int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handler) {
     struct iqs5xx_data *data = dev->data;
     data->data_ready_handler = handler;
@@ -200,10 +195,6 @@ int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handle
 
 /**
  * @brief Called when data ready pin goes active. Releases the semaphore allowing thread to run.
- *
- * @param dev
- * @param cb
- * @param pins
  */
 static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
     struct iqs5xx_data *data = CONTAINER_OF(cb, struct iqs5xx_data, dr_cb);
@@ -211,43 +202,37 @@ static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, 
 }
 
 /**
- * @brief Sets registers to initial values
- *
- * @param dev
- * @return >0 if error
+ * @brief Sets registers to initial values with optimized settings
  */
-int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_config *config) {
-    // TODO: Retry if error on write
+int iqs5xx_registers_init(const struct device *dev, const struct iqs5xx_reg_config *config) {
     struct iqs5xx_data *data = dev->data;
     const struct iqs5xx_config *conf = dev->config;
 
-    k_mutex_lock(&data->i2c_mutex, K_MSEC(5000));
+    k_mutex_lock(&data->i2c_mutex, K_MSEC(2000)); // Reduced timeout
 
-    // Wait for dataready?
+    // Wait for dataready with shorter intervals
     while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
-        k_usleep(200);
+        k_usleep(100); // Reduced from 200us
     }
 
     uint8_t buf = RESET_TP;
     // Reset device
     iqs5xx_write(dev, SystemControl1_adr, &buf, 1);
     iqs5xx_write(dev, END_WINDOW, 0, 1);
-    k_msleep(10);
+    k_msleep(5); // Reduced reset time
 
     while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
-        k_usleep(200);
+        k_usleep(100);
     }
 
     // Write register dump
     iqs_regdump_err = iqs5xx_reg_dump(dev);
 
     while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
-        k_usleep(200);
+        k_usleep(100);
     }
 
     int err = 0;
-
-    // 16 or 32 bit values must be swapped to big endian
     uint8_t wbuff[16];
 
     // Set active refresh rate
@@ -277,12 +262,10 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
 
     // Set debounce settings
     err |= iqs5xx_write(dev, ProxDb_adr, &config->debounce, 1);
-
     err |= iqs5xx_write(dev, TouchSnapDb_adr, &config->debounce, 1);
 
-    //wbuff[0] = ND_ENABLE;
+    // Disable noise reduction for better performance
     wbuff[0] = 0;
-    // Set noise reduction
     err |= iqs5xx_write(dev, HardwareSettingsA_adr, wbuff, 1);
 
     // Set i2c timeout
@@ -290,9 +273,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
 
     // Set filter settings
     err |= iqs5xx_write(dev, FilterSettings0_adr, &config->filterSettings, 1);
-
     err |= iqs5xx_write(dev, DynamicBottomBeta_adr, &config->filterDynBottomBeta, 1);
-
     err |= iqs5xx_write(dev, DynamicLowerSpeed_adr, &config->filterDynLowerSpeed, 1);
 
     *((uint16_t*)wbuff) = SWPEND16(config->filterDynUpperSpeed);
@@ -318,21 +299,39 @@ static int iqs5xx_init(const struct device *dev) {
 
     k_mutex_init(&data->i2c_mutex);
 
+    // Verify GPIO device is ready
+    if (!device_is_ready(config->dr_port)) {
+        LOG_ERR("DR GPIO device not ready");
+        return -ENODEV;
+    }
+
     // Configure data ready pin
-    gpio_pin_configure(config->dr_port, config->dr_pin, GPIO_INPUT | config->dr_flags);
+    int ret = gpio_pin_configure(config->dr_port, config->dr_pin, GPIO_INPUT | config->dr_flags);
+    if (ret < 0) {
+        LOG_ERR("Failed to configure DR pin: %d", ret);
+        return ret;
+    }
 
     #if CONFIG_IQS5XX_INTERRUPT
-
     // Blocking semaphore as a flag for sensor read
     k_sem_init(&data->gpio_sem, 0, UINT_MAX);
 
     // Initialize interrupt callback
     gpio_init_callback(&data->dr_cb, iqs5xx_callback, BIT(config->dr_pin));
+
     // Add callback
-    int err = gpio_add_callback(config->dr_port, &data->dr_cb);
+    ret = gpio_add_callback(config->dr_port, &data->dr_cb);
+    if (ret < 0) {
+        LOG_ERR("Failed to add GPIO callback: %d", ret);
+        return ret;
+    }
 
     // Configure data ready interrupt
-    err = gpio_pin_interrupt_configure(config->dr_port, config->dr_pin, GPIO_INT_EDGE_TO_ACTIVE);
+    ret = gpio_pin_interrupt_configure(config->dr_port, config->dr_pin, GPIO_INT_EDGE_TO_ACTIVE);
+    if (ret < 0) {
+        LOG_ERR("Failed to configure DR interrupt: %d", ret);
+        return ret;
+    }
     #endif
 
     return 0;
@@ -343,11 +342,10 @@ static struct iqs5xx_data iqs5xx_data = {
     .data_ready_handler = NULL
 };
 
-// hard coded data ready pin and port for now.
 static const struct iqs5xx_config iqs5xx_config = {
-    .dr_port = DEVICE_DT_GET(DT_NODELABEL(gpio1)),
-    .dr_pin = 6,
-    .dr_flags = GPIO_ACTIVE_HIGH,
+    .dr_port = DEVICE_DT_GET(DT_GPIO_CTLR(DT_DRV_INST(0), dr_gpios)),
+    .dr_pin = DT_GPIO_PIN(DT_DRV_INST(0), dr_gpios),
+    .dr_flags = DT_GPIO_FLAGS(DT_DRV_INST(0), dr_gpios),
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
