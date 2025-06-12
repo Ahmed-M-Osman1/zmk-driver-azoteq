@@ -10,6 +10,8 @@
 #include <math.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zmk/hid.h>
+#include <zmk/endpoints.h>
 #include "iqs5xx.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
@@ -32,19 +34,48 @@ struct {
     float y;
 } accumPos;
 
-// Simple input device reference - we'll create a virtual input device
-static const struct device *input_dev = NULL;
-
-// Dummy input report function for now - this will be replaced with proper input device later
-static void input_report_dummy(const struct device *dev, uint8_t type, uint16_t code, int32_t value, bool sync, k_timeout_t timeout) {
-    // For now, just log the input events
+// ZMK mouse integration function
+static void send_mouse_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     LOG_DBG("ahmed :::: Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
 
-    // TODO: Replace this with proper input device handling
-    // This is where you would normally call the ZMK input system
+    if (type == INPUT_EV_KEY) {
+        // Mouse button events
+        if (value > 0) {
+            zmk_hid_mouse_button_press(code - INPUT_BTN_0);  // Convert to button index
+        } else {
+            zmk_hid_mouse_button_release(code - INPUT_BTN_0);
+        }
+        zmk_endpoints_send_mouse_report();
+    } else if (type == INPUT_EV_REL) {
+        // Mouse movement/scroll events
+        if (code == INPUT_REL_X || code == INPUT_REL_Y) {
+            // For movement, we need to accumulate and send
+            static int16_t pending_x = 0, pending_y = 0;
+
+            if (code == INPUT_REL_X) {
+                pending_x = value;
+            } else {
+                pending_y = value;
+            }
+
+            if (sync) {
+                zmk_hid_mouse_movement_set(pending_x, pending_y);
+                zmk_endpoints_send_mouse_report();
+                pending_x = pending_y = 0;
+            }
+        } else if (code == INPUT_REL_WHEEL || code == INPUT_REL_HWHEEL) {
+            // Scroll events
+            if (code == INPUT_REL_WHEEL) {
+                zmk_hid_mouse_scroll_set(0, value);  // Vertical scroll
+            } else {
+                zmk_hid_mouse_scroll_set(value, 0);  // Horizontal scroll
+            }
+            zmk_endpoints_send_mouse_report();
+        }
+    }
 }
 
-// Your gesture detection logic (modified to use dummy input for now):
+// Your gesture detection logic (now using real ZMK mouse):
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     bool hasGesture = false;
 
@@ -60,8 +91,8 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         if(threeFingersPressed && k_uptime_get() - threeFingerPressTime < TRACKPAD_THREE_FINGER_CLICK_TIME) {
             hasGesture = true;
             // Middle click via input event
-            input_report_dummy(input_dev, INPUT_EV_KEY, INPUT_BTN_2, 1, true, K_NO_WAIT);
-            input_report_dummy(input_dev, INPUT_EV_KEY, INPUT_BTN_2, 0, true, K_NO_WAIT);
+            send_mouse_event(INPUT_EV_KEY, INPUT_BTN_2, 1, true);
+            send_mouse_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
         }
         threeFingersPressed = false;
     }
@@ -77,8 +108,8 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             case GESTURE_TWO_FINGER_TAP:
                 hasGesture = true;
                 // Right click
-                input_report_dummy(input_dev, INPUT_EV_KEY, INPUT_BTN_1, 1, true, K_NO_WAIT);
-                input_report_dummy(input_dev, INPUT_EV_KEY, INPUT_BTN_1, 0, true, K_NO_WAIT);
+                send_mouse_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
+                send_mouse_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
                 break;
             case GESTURE_SCROLLG:
                 hasGesture = true;
@@ -91,10 +122,10 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
                 }
                 // Send scroll events
                 if (pan != 0) {
-                    input_report_dummy(input_dev, INPUT_EV_REL, INPUT_REL_HWHEEL, pan, false, K_NO_WAIT);
+                    send_mouse_event(INPUT_EV_REL, INPUT_REL_HWHEEL, pan, false);
                 }
                 if (scroll != 0) {
-                    input_report_dummy(input_dev, INPUT_EV_REL, INPUT_REL_WHEEL, scroll, true, K_NO_WAIT);
+                    send_mouse_event(INPUT_EV_REL, INPUT_REL_WHEEL, scroll, true);
                 }
                 break;
         }
@@ -103,12 +134,12 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             case GESTURE_SINGLE_TAP:
                 hasGesture = true;
                 // Left click
-                input_report_dummy(input_dev, INPUT_EV_KEY, INPUT_BTN_0, 1, true, K_NO_WAIT);
-                input_report_dummy(input_dev, INPUT_EV_KEY, INPUT_BTN_0, 0, true, K_NO_WAIT);
+                send_mouse_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                send_mouse_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
                 break;
             case GESTURE_TAP_AND_HOLD:
                 // Drag n drop - hold left button
-                input_report_dummy(input_dev, INPUT_EV_KEY, INPUT_BTN_0, 1, true, K_NO_WAIT);
+                send_mouse_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
                 isHolding = true;
                 break;
         }
@@ -124,8 +155,8 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
 
         if(fabsf(accumPos.x) >= 1 || fabsf(accumPos.y) >= 1) {
             // Send movement events
-            input_report_dummy(input_dev, INPUT_EV_REL, INPUT_REL_X, xp, false, K_NO_WAIT);
-            input_report_dummy(input_dev, INPUT_EV_REL, INPUT_REL_Y, yp, true, K_NO_WAIT);
+            send_mouse_event(INPUT_EV_REL, INPUT_REL_X, xp, false);
+            send_mouse_event(INPUT_EV_REL, INPUT_REL_Y, yp, true);
             accumPos.x = 0;
             accumPos.y = 0;
         }
