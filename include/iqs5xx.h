@@ -67,11 +67,13 @@ struct iqs5xx_data {
     struct k_mutex i2c_mutex;
 };
 
-// Updated config structure using gpio_dt_spec
+// Updated config structure using traditional GPIO references
 struct iqs5xx_config {
     bool invert_x, invert_y, no_taps;
-    // Use gpio_dt_spec for proper device tree GPIO handling
-    struct gpio_dt_spec dr_gpio;
+    // Use traditional GPIO references instead of gpio_dt_spec
+    const struct device *dr_port;
+    uint8_t dr_pin;
+    uint8_t dr_flags;
 };
 
 // Register configuration structure
