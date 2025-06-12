@@ -1,6 +1,6 @@
 /**
  * @file trackpad.c
- * @brief Fixed trackpad gestures with working cursor movement
+ * @brief Enhanced ZMK-integrated trackpad gestures with proper 3-finger detection
  */
 #include <zephyr/device.h>
 #include <zephyr/init.h>
@@ -9,20 +9,19 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/kernel.h>
 #include <math.h>
-#include <zephyr/input/input.h>
-#include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zmk/hid.h>
+#include <zmk/endpoints.h>
 #include "iqs5xx.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// ===== SIMPLIFIED CONSTANTS =====
+// ===== TIMING CONSTANTS =====
+#define TRACKPAD_LEFTCLICK_RELEASE_TIME     50
+#define TRACKPAD_RIGHTCLICK_RELEASE_TIME    50
+#define TRACKPAD_MIDDLECLICK_RELEASE_TIME   50
+#define TRACKPAD_THREE_FINGER_CLICK_TIME    300
+#define SCROLL_REPORT_DISTANCE              35
 #define THREE_FINGER_SWIPE_THRESHOLD        80
-#define THREE_FINGER_TAP_TIMEOUT            500     // Longer timeout for stability
-#define MOVEMENT_THRESHOLD                  2       // Very low threshold
-#define FINGER_STRENGTH_THRESHOLD           10      // Much lower threshold
-#define TRACKPAD_WIDTH                      1024
-#define TRACKPAD_HEIGHT                     1024
-#define FINGER_STABILITY_FRAMES             3       // Require stable count for N frames
 
 // ===== GESTURE STATE =====
 typedef enum {
@@ -34,12 +33,13 @@ typedef enum {
 } gesture_state_t;
 
 static gesture_state_t current_gesture = GESTURE_NONE;
-static const struct device *trackpad_device = NULL;
+static const struct device *trackpad = NULL;
 
-// Movement tracking - simplified
-static struct {
-    float x, y;
-} accumPos = {0, 0};
+// ===== STATE TRACKING =====
+static bool inputEventActive = false;
+static bool isHolding = false;
+static uint8_t lastFingerCount = 0;
+static uint8_t mouseSensitivity = 128;
 
 // Three-finger gesture tracking
 static struct {
@@ -49,79 +49,76 @@ static struct {
     bool swipe_detected;
 } three_finger = {0};
 
-// Two-finger scroll tracking
+// Scroll tracking
+static int16_t lastXScrollReport = 0;
+
+// Movement accumulation
 static struct {
-    int16_t last_x_report;
-    bool active;
-} two_finger_scroll = {0};
+    float x, y;
+} accumPos = {0, 0};
 
-static uint8_t last_finger_count = 0;
-static uint8_t stable_finger_count = 0;
-static uint8_t finger_stability_counter = 0;
-static uint8_t mouse_sensitivity = 128;
+// ===== CLICK TIMERS =====
+static void trackpad_leftclick_release(struct k_timer *timer) {
+    zmk_hid_mouse_button_release(0);
+    zmk_endpoints_send_mouse_report();
+    inputEventActive = false;
+}
+K_TIMER_DEFINE(leftclick_release_timer, trackpad_leftclick_release, NULL);
 
-// ===== HELPER FUNCTIONS =====
+static void trackpad_rightclick_release(struct k_timer *timer) {
+    zmk_hid_mouse_button_release(1);
+    zmk_endpoints_send_mouse_report();
+    inputEventActive = false;
+}
+K_TIMER_DEFINE(rightclick_release_timer, trackpad_rightclick_release, NULL);
 
-static void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
-    if (trackpad_device) {
-        input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
-        LOG_DBG("Sent input: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
+static void trackpad_middleclick_release(struct k_timer *timer) {
+    zmk_hid_mouse_button_release(2);
+    zmk_endpoints_send_mouse_report();
+    inputEventActive = false;
+}
+K_TIMER_DEFINE(middleclick_release_timer, trackpad_middleclick_release, NULL);
+
+// ===== CLICK FUNCTIONS =====
+static inline void trackpad_leftclick(void) {
+    if (isHolding) {
+        zmk_hid_mouse_button_release(0);
+        isHolding = false;
+        inputEventActive = false;
+    } else {
+        if (inputEventActive) return;
+
+        zmk_hid_mouse_button_press(0);
+        k_timer_start(&leftclick_release_timer, K_MSEC(TRACKPAD_LEFTCLICK_RELEASE_TIME), K_NO_WAIT);
+        inputEventActive = true;
     }
 }
 
-// ===== IMPROVED FINGER DETECTION WITH MINIMAL STABILITY =====
-static uint8_t detect_finger_count_stable(const struct iqs5xx_rawdata *data) {
-    uint8_t detected_count = 0;
+static inline void trackpad_rightclick(void) {
+    if (inputEventActive) return;
 
-    // First, trust the hardware count if it seems reasonable
-    if (data->finger_count > 0 && data->finger_count <= 5) {
-        detected_count = data->finger_count;
-        LOG_DBG("Using hardware finger count: %d", detected_count);
-    } else {
-        // Secondary: count by strength
-        for (int i = 0; i < 5; i++) {
-            if (data->fingers[i].strength > FINGER_STRENGTH_THRESHOLD) {
-                detected_count++;
-            }
-        }
+    zmk_hid_mouse_button_press(1);
+    k_timer_start(&rightclick_release_timer, K_MSEC(TRACKPAD_RIGHTCLICK_RELEASE_TIME), K_NO_WAIT);
+    inputEventActive = true;
+}
 
-        if (detected_count > 0) {
-            LOG_DBG("Count by strength: %d", detected_count);
-        } else {
-            // Fallback: if there's movement, assume 1 finger
-            uint32_t movement = abs(data->rx) + abs(data->ry);
-            if (movement > MOVEMENT_THRESHOLD) {
-                detected_count = 1;
-                LOG_DBG("Movement detected: %d, assuming 1 finger", movement);
-            }
-        }
-    }
+static inline void trackpad_middleclick(void) {
+    if (inputEventActive) return;
 
-    // Simple stability for 3+ fingers only (to prevent false drops)
-    if (detected_count >= 3 || last_finger_count >= 3) {
-        if (detected_count == last_finger_count) {
-            finger_stability_counter++;
-            if (finger_stability_counter >= FINGER_STABILITY_FRAMES) {
-                stable_finger_count = detected_count;
-            }
-        } else {
-            finger_stability_counter = 0;
-            // Allow immediate drop to 0, but delay other changes
-            if (detected_count == 0) {
-                stable_finger_count = 0;
-            }
-        }
-        return stable_finger_count;
-    } else {
-        // For 0, 1, 2 fingers, use immediate detection
-        finger_stability_counter = 0;
-        stable_finger_count = detected_count;
-        return detected_count;
+    LOG_INF("=== MIDDLE CLICK ===");
+    zmk_hid_mouse_button_press(2);
+    k_timer_start(&middleclick_release_timer, K_MSEC(TRACKPAD_MIDDLECLICK_RELEASE_TIME), K_NO_WAIT);
+    inputEventActive = true;
+}
+
+static inline void trackpad_tap_and_hold(bool enable) {
+    if (!isHolding && enable) {
+        zmk_hid_mouse_button_press(0);
+        isHolding = true;
     }
 }
 
-// ===== GESTURE HANDLERS =====
-
+// ===== THREE-FINGER GESTURE HANDLERS =====
 static void handle_three_finger_start(const struct iqs5xx_rawdata *data) {
     three_finger.active = true;
     three_finger.start_time = k_uptime_get();
@@ -151,22 +148,32 @@ static void handle_three_finger_movement(const struct iqs5xx_rawdata *data) {
         if (abs(delta_y) > abs(delta_x)) {
             // Vertical swipe - Mission Control
             LOG_INF("=== 3-FINGER SWIPE VERTICAL - MISSION CONTROL ===");
-            send_input_event(INPUT_EV_KEY, INPUT_KEY_F3, 1, true);
-            send_input_event(INPUT_EV_KEY, INPUT_KEY_F3, 0, true);
+            // Send F3 key
+            zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F3);
+            zmk_endpoints_send_keyboard_report();
+            k_msleep(10);
+            zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F3);
+            zmk_endpoints_send_keyboard_report();
         } else {
             // Horizontal swipe - Desktop switch
             if (delta_x > 0) {
                 LOG_INF("=== 3-FINGER SWIPE RIGHT - DESKTOP SWITCH ===");
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_LEFTCTRL, 1, false);
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_RIGHT, 1, false);
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_RIGHT, 0, false);
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_LEFTCTRL, 0, true);
+                zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+                zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_RIGHT_ARROW);
+                zmk_endpoints_send_keyboard_report();
+                k_msleep(10);
+                zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_RIGHT_ARROW);
+                zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+                zmk_endpoints_send_keyboard_report();
             } else {
                 LOG_INF("=== 3-FINGER SWIPE LEFT - DESKTOP SWITCH ===");
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_LEFTCTRL, 1, false);
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_LEFT, 1, false);
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_LEFT, 0, false);
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_LEFTCTRL, 0, true);
+                zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+                zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_ARROW);
+                zmk_endpoints_send_keyboard_report();
+                k_msleep(10);
+                zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_ARROW);
+                zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+                zmk_endpoints_send_keyboard_report();
             }
         }
     }
@@ -177,10 +184,9 @@ static void handle_three_finger_end(void) {
 
     int64_t duration = k_uptime_get() - three_finger.start_time;
 
-    if (!three_finger.swipe_detected && duration < THREE_FINGER_TAP_TIMEOUT) {
+    if (!three_finger.swipe_detected && duration < TRACKPAD_THREE_FINGER_CLICK_TIME) {
         LOG_INF("=== 3-FINGER TAP - MIDDLE CLICK ===");
-        send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, true);
-        send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
+        trackpad_middleclick();
     }
 
     three_finger.active = false;
@@ -188,170 +194,150 @@ static void handle_three_finger_end(void) {
     current_gesture = GESTURE_NONE;
 }
 
-static void handle_cursor_movement(const struct iqs5xx_rawdata *data) {
-    // Skip if in multi-finger gesture
-    if (current_gesture == GESTURE_THREE_FINGER_TAP ||
-        current_gesture == GESTURE_THREE_FINGER_SWIPE ||
-        current_gesture == GESTURE_TWO_FINGER_SCROLL) {
-        return;
-    }
-
-    // Check if movement is significant enough
-    if (abs(data->rx) < MOVEMENT_THRESHOLD && abs(data->ry) < MOVEMENT_THRESHOLD) {
-        return;
-    }
-
-    current_gesture = GESTURE_CURSOR_MOVE;
-
-    // Apply sensitivity and coordinate transformation
-    float sens_multiplier = (float)mouse_sensitivity / 128.0f;
-    accumPos.x += -data->ry * sens_multiplier;  // Swap and invert Y for proper direction
-    accumPos.y += data->rx * sens_multiplier;   // X becomes Y
-
-    int16_t move_x = (int16_t)accumPos.x;
-    int16_t move_y = (int16_t)accumPos.y;
-
-    // Send movement if significant
-    if (abs(move_x) >= 1 || abs(move_y) >= 1) {
-        LOG_DBG("Cursor move: rx=%d, ry=%d -> mx=%d, my=%d", data->rx, data->ry, move_x, move_y);
-        send_input_event(INPUT_EV_REL, INPUT_REL_X, move_x, false);
-        send_input_event(INPUT_EV_REL, INPUT_REL_Y, move_y, true);
-
-        // Subtract what we sent to avoid accumulation
-        accumPos.x -= move_x;
-        accumPos.y -= move_y;
-    }
-}
-
-static void handle_two_finger_scroll(const struct iqs5xx_rawdata *data) {
-    if (!two_finger_scroll.active) {
-        two_finger_scroll.active = true;
-        two_finger_scroll.last_x_report = 0;
-        LOG_INF("=== TWO-FINGER SCROLL STARTED ===");
-    }
-
-    current_gesture = GESTURE_TWO_FINGER_SCROLL;
-
-    // Use relative movement for scrolling with better scaling
-    int8_t vertical_scroll = 0;
-    int8_t horizontal_scroll = 0;
-
-    // Vertical scroll (more sensitive)
-    if (abs(data->ry) > 8) {
-        vertical_scroll = -data->ry / 8;  // Scale down and invert
-        if (vertical_scroll == 0 && data->ry != 0) {
-            vertical_scroll = data->ry > 0 ? -1 : 1;  // Ensure minimum movement
-        }
-    }
-
-    // Horizontal scroll (accumulate for smoother experience)
-    two_finger_scroll.last_x_report += data->rx;
-    if (abs(two_finger_scroll.last_x_report) > 20) {
-        horizontal_scroll = two_finger_scroll.last_x_report > 0 ? 1 : -1;
-        two_finger_scroll.last_x_report = 0;
-    }
-
-    // Send scroll events
-    if (vertical_scroll != 0) {
-        LOG_DBG("Vertical scroll: %d (ry=%d)", vertical_scroll, data->ry);
-        send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, vertical_scroll, true);
-    }
-    if (horizontal_scroll != 0) {
-        LOG_DBG("Horizontal scroll: %d", horizontal_scroll);
-        send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, horizontal_scroll, true);
-    }
-}
-
 // ===== MAIN TRIGGER HANDLER =====
 static void enhanced_trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
-    uint8_t finger_count = detect_finger_count_stable(data);
-    bool finger_count_changed = (finger_count != last_finger_count);
+    bool hasGesture = false;
+    bool inputMoved = false;
+    uint8_t finger_count = data->finger_count;
 
-    // Log important events
-    if (finger_count_changed) {
-        LOG_INF("*** FINGER COUNT: %d -> %d (stable=%d, counter=%d) ***",
-                last_finger_count, finger_count, stable_finger_count, finger_stability_counter);
+    // Log finger count changes
+    if (finger_count != lastFingerCount) {
+        LOG_INF("*** FINGER COUNT: %d -> %d ***", lastFingerCount, finger_count);
     }
 
-    // Log movement for debugging
-    if (abs(data->rx) > 2 || abs(data->ry) > 2) {
-        LOG_DBG("Movement: rx=%d, ry=%d, fingers=%d, gestures0=0x%02x, gestures1=0x%02x",
-                data->rx, data->ry, finger_count, data->gestures0, data->gestures1);
-    }
-
-    // ===== GESTURE HANDLING BY FINGER COUNT =====
-
+    // ===== THREE-FINGER GESTURE HANDLING =====
     if (finger_count >= 3) {
-        // Three+ finger gestures
         if (!three_finger.active) {
             handle_three_finger_start(data);
         } else {
             handle_three_finger_movement(data);
         }
-        // Reset two-finger scroll
-        two_finger_scroll.active = false;
-    } else if (three_finger.active && finger_count < 3) {
-        // End three-finger gesture
+        hasGesture = true;
+    } else if (three_finger.active) {
         handle_three_finger_end();
-    } else if (finger_count == 2) {
-        // Two-finger scroll - check for scroll gesture OR significant movement
-        if ((data->gestures1 & GESTURE_SCROLLG) ||
-            (abs(data->rx) > 5 || abs(data->ry) > 5)) {
-            handle_two_finger_scroll(data);
+    }
+
+    // ===== FINGER LIFT HANDLING =====
+    if (finger_count == 0) {
+        accumPos.x = 0;
+        accumPos.y = 0;
+        // Clear any movement
+        zmk_hid_mouse_movement_set(0, 0);
+    }
+
+    // ===== TWO-FINGER SCROLL RESET =====
+    if (finger_count != 2) {
+        zmk_hid_mouse_scroll_set(0, 0);
+    }
+
+    // ===== BUILT-IN GESTURE HANDLING =====
+    if ((data->gestures0 || data->gestures1) && !hasGesture && !three_finger.active) {
+        // Two-finger gestures
+        switch (data->gestures1) {
+            case GESTURE_TWO_FINGER_TAP:
+                hasGesture = true;
+                LOG_INF("Two-finger tap -> Right click");
+                trackpad_rightclick();
+                zmk_hid_mouse_movement_set(0, 0);
+                break;
+
+            case GESTURE_SCROLLG:
+                hasGesture = true;
+                current_gesture = GESTURE_TWO_FINGER_SCROLL;
+                lastXScrollReport += data->rx;
+
+                // Vertical scroll (immediate)
+                int8_t vertical_scroll = -data->ry / 8;
+                if (vertical_scroll == 0 && data->ry != 0) {
+                    vertical_scroll = data->ry > 0 ? -1 : 1;
+                }
+
+                // Horizontal scroll (accumulated)
+                int8_t horizontal_scroll = 0;
+                if (abs(lastXScrollReport) >= SCROLL_REPORT_DISTANCE) {
+                    horizontal_scroll = lastXScrollReport >= 0 ? 1 : -1;
+                    lastXScrollReport = 0;
+                }
+
+                if (vertical_scroll != 0 || horizontal_scroll != 0) {
+                    LOG_DBG("Scroll: v=%d, h=%d (ry=%d, rx_accum=%d)",
+                            vertical_scroll, horizontal_scroll, data->ry, lastXScrollReport);
+                    zmk_hid_mouse_scroll_set(vertical_scroll, horizontal_scroll);
+                }
+                zmk_hid_mouse_movement_set(0, 0);
+                break;
         }
-    } else if (finger_count == 1) {
-        // Single finger - cursor movement
-        // Reset two-finger scroll
-        if (two_finger_scroll.active) {
-            two_finger_scroll.active = false;
-            LOG_INF("=== TWO-FINGER SCROLL ENDED ===");
+
+        // Single-finger gestures
+        switch (data->gestures0) {
+            case GESTURE_SINGLE_TAP:
+                hasGesture = true;
+                LOG_INF("Single tap -> Left click");
+                trackpad_leftclick();
+                zmk_hid_mouse_movement_set(0, 0);
+                break;
+
+            case GESTURE_TAP_AND_HOLD:
+                hasGesture = true;
+                trackpad_tap_and_hold(true);
+                zmk_hid_mouse_movement_set(0, 0);
+                isHolding = true;
+                break;
         }
-        handle_cursor_movement(data);
-    } else if (finger_count == 0) {
-        // No fingers - reset everything
-        if (current_gesture == GESTURE_CURSOR_MOVE) {
+    }
+
+    // ===== CURSOR MOVEMENT =====
+    if (!hasGesture && !three_finger.active && finger_count == 1) {
+        current_gesture = GESTURE_CURSOR_MOVE;
+
+        float sens_multiplier = (float)mouseSensitivity / 128.0f;
+        accumPos.x += -data->ry * sens_multiplier;
+        accumPos.y += data->rx * sens_multiplier;
+
+        int16_t move_x = (int16_t)accumPos.x;
+        int16_t move_y = (int16_t)accumPos.y;
+
+        bool should_update = false;
+        if (fabsf(accumPos.x) >= 1) {
+            should_update = true;
             accumPos.x = 0;
+        }
+        if (fabsf(accumPos.y) >= 1) {
+            should_update = true;
             accumPos.y = 0;
         }
-        if (two_finger_scroll.active) {
-            two_finger_scroll.active = false;
-            LOG_INF("=== TWO-FINGER SCROLL ENDED ===");
-        }
-        current_gesture = GESTURE_NONE;
-    }
 
-    // ===== HANDLE BUILT-IN TAP GESTURES =====
-    // Only process taps if no complex gesture is active
-    if (current_gesture == GESTURE_NONE || current_gesture == GESTURE_CURSOR_MOVE) {
-        if (data->gestures0 & GESTURE_SINGLE_TAP) {
-            LOG_INF("Single tap -> Left click");
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
-        }
-
-        if (data->gestures1 & GESTURE_TWO_FINGER_TAP) {
-            LOG_INF("Two-finger tap -> Right click");
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
+        if (should_update) {
+            zmk_hid_mouse_movement_set(move_x, move_y);
+            inputMoved = true;
+            LOG_DBG("Cursor move: rx=%d, ry=%d -> mx=%d, my=%d", data->rx, data->ry, move_x, move_y);
         }
     }
 
-    last_finger_count = finger_count;
+    lastFingerCount = finger_count;
+
+    // ===== SEND REPORT =====
+    if (inputMoved || hasGesture) {
+        zmk_endpoints_send_mouse_report();
+    }
 }
 
 // ===== INITIALIZATION =====
-static int enhanced_trackpad_init(void) {
-    const struct device *trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
+static int enhanced_trackpad_init(const struct device *_arg) {
+    trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
     if (trackpad == NULL) {
         LOG_ERR("Failed to get IQS5XX device");
         return -EINVAL;
     }
 
-    trackpad_device = trackpad;
+    // Initialize state
+    accumPos.x = 0;
+    accumPos.y = 0;
+    current_gesture = GESTURE_NONE;
 
-    LOG_INF("Enhanced trackpad gestures initialized");
-    LOG_INF("Mouse sensitivity: %d", mouse_sensitivity);
-    LOG_INF("Movement threshold: %d", MOVEMENT_THRESHOLD);
+    LOG_INF("Enhanced ZMK trackpad gestures initialized");
+    LOG_INF("3-finger swipe threshold: %d pixels", THREE_FINGER_SWIPE_THRESHOLD);
+    LOG_INF("3-finger tap timeout: %d ms", TRACKPAD_THREE_FINGER_CLICK_TIME);
 
     int err = iqs5xx_trigger_set(trackpad, enhanced_trackpad_trigger_handler);
     if (err) {
