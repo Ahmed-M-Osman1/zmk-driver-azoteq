@@ -254,16 +254,11 @@ static void handle_two_finger_scroll(const struct iqs5xx_rawdata *data) {
     // Send scroll events
     if (vertical_scroll != 0) {
         LOG_DBG("Vertical scroll: %d (ry=%d)", vertical_scroll, data->ry);
-        send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, vertical_scroll, false);
+        send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, vertical_scroll, true);
     }
     if (horizontal_scroll != 0) {
         LOG_DBG("Horizontal scroll: %d", horizontal_scroll);
-        send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, horizontal_scroll, false);
-    }
-
-    // Send sync if any scroll occurred
-    if (vertical_scroll != 0 || horizontal_scroll != 0) {
-        send_input_event(INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true);
+        send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, horizontal_scroll, true);
     }
 }
 
