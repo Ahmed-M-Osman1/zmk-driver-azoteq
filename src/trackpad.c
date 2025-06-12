@@ -17,11 +17,12 @@ LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 // ===== SIMPLIFIED CONSTANTS =====
 #define THREE_FINGER_SWIPE_THRESHOLD        80
-#define THREE_FINGER_TAP_TIMEOUT            300
+#define THREE_FINGER_TAP_TIMEOUT            500     // Longer timeout for stability
 #define MOVEMENT_THRESHOLD                  2       // Very low threshold
 #define FINGER_STRENGTH_THRESHOLD           10      // Much lower threshold
 #define TRACKPAD_WIDTH                      1024
 #define TRACKPAD_HEIGHT                     1024
+#define FINGER_STABILITY_FRAMES             3       // Require stable count for N frames
 
 // ===== GESTURE STATE =====
 typedef enum {
@@ -51,9 +52,12 @@ static struct {
 // Two-finger scroll tracking
 static struct {
     int16_t last_x_report;
+    bool active;
 } two_finger_scroll = {0};
 
 static uint8_t last_finger_count = 0;
+static uint8_t stable_finger_count = 0;
+static uint8_t finger_stability_counter = 0;
 static uint8_t mouse_sensitivity = 128;
 
 // ===== HELPER FUNCTIONS =====
@@ -65,36 +69,55 @@ static void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sy
     }
 }
 
-// ===== SIMPLIFIED FINGER DETECTION =====
-static uint8_t detect_finger_count_simple(const struct iqs5xx_rawdata *data) {
+// ===== IMPROVED FINGER DETECTION WITH MINIMAL STABILITY =====
+static uint8_t detect_finger_count_stable(const struct iqs5xx_rawdata *data) {
+    uint8_t detected_count = 0;
+
     // First, trust the hardware count if it seems reasonable
     if (data->finger_count > 0 && data->finger_count <= 5) {
-        LOG_DBG("Using hardware finger count: %d", data->finger_count);
-        return data->finger_count;
-    }
+        detected_count = data->finger_count;
+        LOG_DBG("Using hardware finger count: %d", detected_count);
+    } else {
+        // Secondary: count by strength
+        for (int i = 0; i < 5; i++) {
+            if (data->fingers[i].strength > FINGER_STRENGTH_THRESHOLD) {
+                detected_count++;
+            }
+        }
 
-    // Secondary: count by strength
-    uint8_t count = 0;
-    for (int i = 0; i < 5; i++) {
-        if (data->fingers[i].strength > FINGER_STRENGTH_THRESHOLD) {
-            count++;
-            LOG_DBG("Finger %d: strength=%d (active)", i, data->fingers[i].strength);
+        if (detected_count > 0) {
+            LOG_DBG("Count by strength: %d", detected_count);
+        } else {
+            // Fallback: if there's movement, assume 1 finger
+            uint32_t movement = abs(data->rx) + abs(data->ry);
+            if (movement > MOVEMENT_THRESHOLD) {
+                detected_count = 1;
+                LOG_DBG("Movement detected: %d, assuming 1 finger", movement);
+            }
         }
     }
 
-    if (count > 0) {
-        LOG_DBG("Count by strength: %d", count);
-        return count;
+    // Simple stability for 3+ fingers only (to prevent false drops)
+    if (detected_count >= 3 || last_finger_count >= 3) {
+        if (detected_count == last_finger_count) {
+            finger_stability_counter++;
+            if (finger_stability_counter >= FINGER_STABILITY_FRAMES) {
+                stable_finger_count = detected_count;
+            }
+        } else {
+            finger_stability_counter = 0;
+            // Allow immediate drop to 0, but delay other changes
+            if (detected_count == 0) {
+                stable_finger_count = 0;
+            }
+        }
+        return stable_finger_count;
+    } else {
+        // For 0, 1, 2 fingers, use immediate detection
+        finger_stability_counter = 0;
+        stable_finger_count = detected_count;
+        return detected_count;
     }
-
-    // Fallback: if there's movement, assume 1 finger
-    uint32_t movement = abs(data->rx) + abs(data->ry);
-    if (movement > MOVEMENT_THRESHOLD) {
-        LOG_DBG("Movement detected: %d, assuming 1 finger", movement);
-        return 1;
-    }
-
-    return 0;
 }
 
 // ===== GESTURE HANDLERS =====
@@ -201,45 +224,64 @@ static void handle_cursor_movement(const struct iqs5xx_rawdata *data) {
 }
 
 static void handle_two_finger_scroll(const struct iqs5xx_rawdata *data) {
+    if (!two_finger_scroll.active) {
+        two_finger_scroll.active = true;
+        two_finger_scroll.last_x_report = 0;
+        LOG_INF("=== TWO-FINGER SCROLL STARTED ===");
+    }
+
     current_gesture = GESTURE_TWO_FINGER_SCROLL;
 
-    // Simple two-finger scroll based on relative movement
+    // Use relative movement for scrolling with better scaling
     int8_t vertical_scroll = 0;
     int8_t horizontal_scroll = 0;
 
-    // Use relative movement for scrolling
-    if (abs(data->ry) > 10) {
-        vertical_scroll = -data->ry / 15;  // Scale down and invert
+    // Vertical scroll (more sensitive)
+    if (abs(data->ry) > 8) {
+        vertical_scroll = -data->ry / 8;  // Scale down and invert
+        if (vertical_scroll == 0 && data->ry != 0) {
+            vertical_scroll = data->ry > 0 ? -1 : 1;  // Ensure minimum movement
+        }
     }
 
-    if (abs(data->rx) > 10) {
-        horizontal_scroll = data->rx / 15;  // Scale down
+    // Horizontal scroll (accumulate for smoother experience)
+    two_finger_scroll.last_x_report += data->rx;
+    if (abs(two_finger_scroll.last_x_report) > 20) {
+        horizontal_scroll = two_finger_scroll.last_x_report > 0 ? 1 : -1;
+        two_finger_scroll.last_x_report = 0;
     }
 
     // Send scroll events
     if (vertical_scroll != 0) {
-        LOG_DBG("Vertical scroll: %d", vertical_scroll);
-        send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, vertical_scroll, true);
+        LOG_DBG("Vertical scroll: %d (ry=%d)", vertical_scroll, data->ry);
+        send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, vertical_scroll, false);
     }
     if (horizontal_scroll != 0) {
         LOG_DBG("Horizontal scroll: %d", horizontal_scroll);
-        send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, horizontal_scroll, true);
+        send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, horizontal_scroll, false);
+    }
+
+    // Send sync if any scroll occurred
+    if (vertical_scroll != 0 || horizontal_scroll != 0) {
+        send_input_event(INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true);
     }
 }
 
 // ===== MAIN TRIGGER HANDLER =====
 static void enhanced_trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
-    uint8_t finger_count = detect_finger_count_simple(data);
+    uint8_t finger_count = detect_finger_count_stable(data);
     bool finger_count_changed = (finger_count != last_finger_count);
 
     // Log important events
     if (finger_count_changed) {
-        LOG_INF("*** FINGER COUNT: %d -> %d ***", last_finger_count, finger_count);
+        LOG_INF("*** FINGER COUNT: %d -> %d (stable=%d, counter=%d) ***",
+                last_finger_count, finger_count, stable_finger_count, finger_stability_counter);
     }
 
     // Log movement for debugging
     if (abs(data->rx) > 2 || abs(data->ry) > 2) {
-        LOG_DBG("Movement: rx=%d, ry=%d, fingers=%d", data->rx, data->ry, finger_count);
+        LOG_DBG("Movement: rx=%d, ry=%d, fingers=%d, gestures0=0x%02x, gestures1=0x%02x",
+                data->rx, data->ry, finger_count, data->gestures0, data->gestures1);
     }
 
     // ===== GESTURE HANDLING BY FINGER COUNT =====
@@ -251,22 +293,34 @@ static void enhanced_trackpad_trigger_handler(const struct device *dev, const st
         } else {
             handle_three_finger_movement(data);
         }
-    } else if (three_finger.active) {
+        // Reset two-finger scroll
+        two_finger_scroll.active = false;
+    } else if (three_finger.active && finger_count < 3) {
         // End three-finger gesture
         handle_three_finger_end();
     } else if (finger_count == 2) {
-        // Two-finger scroll - check for scroll gesture
-        if (data->gestures1 & GESTURE_SCROLLG) {
+        // Two-finger scroll - check for scroll gesture OR significant movement
+        if ((data->gestures1 & GESTURE_SCROLLG) ||
+            (abs(data->rx) > 5 || abs(data->ry) > 5)) {
             handle_two_finger_scroll(data);
         }
     } else if (finger_count == 1) {
         // Single finger - cursor movement
+        // Reset two-finger scroll
+        if (two_finger_scroll.active) {
+            two_finger_scroll.active = false;
+            LOG_INF("=== TWO-FINGER SCROLL ENDED ===");
+        }
         handle_cursor_movement(data);
     } else if (finger_count == 0) {
         // No fingers - reset everything
         if (current_gesture == GESTURE_CURSOR_MOVE) {
             accumPos.x = 0;
             accumPos.y = 0;
+        }
+        if (two_finger_scroll.active) {
+            two_finger_scroll.active = false;
+            LOG_INF("=== TWO-FINGER SCROLL ENDED ===");
         }
         current_gesture = GESTURE_NONE;
     }
