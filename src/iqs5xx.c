@@ -23,21 +23,25 @@ static int iqs_regdump_err = 0;
 struct iqs5xx_reg_config iqs5xx_reg_config_default () {
     struct iqs5xx_reg_config regconf;
 
-        regconf.activeRefreshRate =         5;    // Increased from 10 for faster response
-        regconf.idleRefreshRate =           20;   // Increased from 50
-        regconf.singleFingerGestureMask =   GESTURE_SINGLE_TAP | GESTURE_TAP_AND_HOLD;
-        regconf.multiFingerGestureMask =    GESTURE_TWO_FINGER_TAP | GESTURE_SCROLLG;
-        regconf.tapTime =                   100;  // Reduced for faster taps
-        regconf.tapDistance =               15;   // Reduced for more sensitive taps
-        regconf.touchMultiplier =           0;
-        regconf.debounce =                  0;
-        regconf.i2cTimeout =                2;    // Reduced timeout
-        regconf.filterSettings =            MAV_FILTER | IIR_FILTER;
-        regconf.filterDynBottomBeta =        15;  // Reduced for less filtering
-        regconf.filterDynLowerSpeed =        10;  // Reduced for faster response
-        regconf.filterDynUpperSpeed =        200; // Increased for better fast movements
+        regconf.activeRefreshRate =         3;    // Faster refresh for responsiveness (was 5)
+        regconf.idleRefreshRate =           10;   // Faster idle refresh (was 20)
 
-        regconf.initScrollDistance =        10;   // Reduced for easier scrolling
+        // GESTURE CONFIGURATION
+        regconf.singleFingerGestureMask =   GESTURE_SINGLE_TAP;  // Removed TAP_AND_HOLD to reduce conflicts
+        regconf.multiFingerGestureMask =    GESTURE_TWO_FINGER_TAP | GESTURE_SCROLLG;
+        // TIMING OPTIMIZATIONS
+        regconf.tapTime =                   80;   // Shorter tap time for responsiveness (was 100)
+        regconf.tapDistance =               20;   // Slightly larger tap distance for reliability (was 15)
+        regconf.touchMultiplier =           0;
+        regconf.debounce =                  0;    // Minimal debounce for speed
+        regconf.i2cTimeout =                1;    // Faster I2C timeout (was 2)
+        // FILTER OPTIMIZATIONS - Less aggressive filtering for better responsiveness
+        regconf.filterSettings =            IIR_FILTER;  // Removed MAV_FILTER for speed
+        regconf.filterDynBottomBeta =        8;   // Reduced filtering (was 15)
+        regconf.filterDynLowerSpeed =        5;   // Faster response (was 10)
+        regconf.filterDynUpperSpeed =        300; // Higher speed threshold (was 200)
+        // SCROLL OPTIMIZATION
+        regconf.initScrollDistance =        8;    // Easier scrolling (was 10)
 
         return regconf;
 }
