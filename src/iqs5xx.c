@@ -159,13 +159,12 @@ static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
         LOG_ERR("Failed to initialize IQS5xx registers!\r\n");
     }
 
-    int nstate = 0;
     while (1) {
         #ifdef CONFIG_IQS5XX_POLL
             k_msleep(2);
 
             // Poll data ready pin using dt_spec
-            nstate = gpio_pin_get_dt(&config->dr_gpio);
+            int nstate = gpio_pin_get_dt(&config->dr_gpio);
 
             if(nstate) {
                 iqs5xx_sample_fetch(dev);

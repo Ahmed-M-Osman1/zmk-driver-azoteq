@@ -9,7 +9,7 @@ on-bus: i2c
 properties:
   label:
     type: string
-    required: true
+    required: false
 
   dr-gpios:
     type: phandle-array
@@ -18,13 +18,16 @@ properties:
 
   invert-x:
     type: boolean
+    required: false
     description: Invert X axis movement
 
   invert-y:
     type: boolean
+    required: false
     description: Invert Y axis movement
 
   # support input device
   input:
     type: phandle
+    required: false
     description: Input device for trackpad events
