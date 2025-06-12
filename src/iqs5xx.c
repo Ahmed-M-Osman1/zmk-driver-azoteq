@@ -1,367 +1,228 @@
-/*
- * Copyright (c) 2020 The ZMK Contributors
- *
- * SPDX-License-Identifier: MIT
+/**
+ * @file trackpad.c
+ * @brief Enhanced trackpad gesture handling for IQS5XX with fixed scroll direction
  */
-#define DT_DRV_COMPAT azoteq_iqs5xx
-
-#include <zephyr/drivers/gpio.h>
-#include <nrfx_gpiote.h>
+#include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/drivers/i2c.h>
-#include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <math.h>
+#include <zephyr/input/input.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 #include "iqs5xx.h"
 
-LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
+LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-static int iqs_regdump_err = 0;
+// Enhanced timing constants for better responsiveness
+#define TRACKPAD_THREE_FINGER_CLICK_TIME    200  // Reduced from 300ms
+#define SCROLL_REPORT_DISTANCE              25   // Reduced from 35 for more sensitive scrolling
+#define TAP_DEBOUNCE_TIME                   50   // New: debounce for taps
+#define MOVEMENT_THRESHOLD                  3    // Minimum movement to register
 
-// Enhanced default config with better performance settings
-struct iqs5xx_reg_config iqs5xx_reg_config_default() {
-    struct iqs5xx_reg_config regconf;
+// State variables
+static bool isHolding = false;
+static const struct device *trackpad;
+static uint8_t lastFingerCount = 0;
+static int64_t threeFingerPressTime = 0;
+static int64_t lastTapTime = 0; // For tap debouncing
+static int16_t lastXScrollReport = 0;
+static int16_t lastYScrollReport = 0; // Add Y scroll tracking
+static bool threeFingersPressed = false;
+static uint8_t mouseSensitivity = 128;
 
-    // Faster refresh rates for better responsiveness
-    regconf.activeRefreshRate = 5;        // Reduced from 10ms to 5ms
-    regconf.idleRefreshRate = 25;         // Reduced from 50ms to 25ms
+// Movement accumulator with better precision
+struct {
+    float x;
+    float y;
+} accumPos;
 
-    // Optimized gesture settings
-    regconf.singleFingerGestureMask = GESTURE_SINGLE_TAP | GESTURE_TAP_AND_HOLD;
-    regconf.multiFingerGestureMask = GESTURE_TWO_FINGER_TAP | GESTURE_SCROLLG;
+// Reference to the trackpad device
+static const struct device *trackpad_device = NULL;
 
-    // Faster tap detection
-    regconf.tapTime = 100;                // Reduced from 150ms
-    regconf.tapDistance = 20;             // Reduced for more sensitive taps
+// Enhanced input event sending with better error handling
+static void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
+    LOG_DBG("Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
 
-    regconf.touchMultiplier = 0;
-    regconf.debounce = 0;                 // Remove debounce for faster response
-    regconf.i2cTimeout = 2;               // Reduced timeout
-
-    // Enhanced filter settings for better performance
-    regconf.filterSettings = MAV_FILTER | IIR_FILTER;
-    regconf.filterDynBottomBeta = 30;     // Increased for better filtering
-    regconf.filterDynLowerSpeed = 15;     // Reduced for faster response
-    regconf.filterDynUpperSpeed = 200;    // Increased upper limit
-
-    regconf.initScrollDistance = 15;      // Reduced for more sensitive scrolling
-
-    return regconf;
-}
-
-/**
- * @brief Read from the iqs550 chip via i2c
- */
-static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8_t *read_buf,
-                           const uint8_t len) {
-    const struct iqs5xx_data *data = dev->data;
-    uint16_t nstart = (start << 8 ) | (start >> 8);
-    int ret = i2c_write_read(data->i2c, AZOTEQ_IQS5XX_ADDR, &nstart, sizeof(nstart), read_buf, len);
-    if (ret < 0) {
-        LOG_WRN("I2C read failed: %d", ret);
+    if (trackpad_device) {
+        int ret = input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
+        if (ret < 0) {
+            LOG_WRN("Failed to send input event: %d", ret);
+        }
     }
-    return ret;
 }
 
-/**
- * @brief Write to the iqs550 chip via i2c
- */
-static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, const uint8_t *buf,
-                        uint32_t num_bytes) {
+// Enhanced gesture detection with better performance and fixed scroll direction
+static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
+    bool hasGesture = false;
+    int64_t currentTime = k_uptime_get();
 
-    const struct iqs5xx_data *data = dev->data;
-
-    uint8_t addr_buffer[2];
-    struct i2c_msg msg[2];
-
-    addr_buffer[1] = start_addr & 0xFF;
-    addr_buffer[0] = start_addr >> 8;
-    msg[0].buf = addr_buffer;
-    msg[0].len = 2U;
-    msg[0].flags = I2C_MSG_WRITE;
-
-    msg[1].buf = (uint8_t *)buf;
-    msg[1].len = num_bytes;
-    msg[1].flags = I2C_MSG_WRITE | I2C_MSG_STOP;
-
-    int err = i2c_transfer(data->i2c, msg, 2, AZOTEQ_IQS5XX_ADDR);
-    if (err < 0) {
-        LOG_WRN("I2C write failed: %d", err);
-    }
-    return err;
-}
-
-static int iqs5xx_reg_dump(const struct device *dev) {
-    return iqs5xx_write(dev, IQS5XX_REG_DUMP_START_ADDRESS, _iqs5xx_regdump, IQS5XX_REG_DUMP_SIZE);
-}
-
-static int iqs5xx_attr_set(const struct device *dev, enum sensor_channel chan,
-                           enum sensor_attribute attr, const struct sensor_value *val) {
-    LOG_ERR("\nSetting attributes\n");
-    return 0;
-}
-
-/**
- * @brief Read data from IQS5XX with optimized processing
- */
-static int iqs5xx_sample_fetch(const struct device *dev) {
-    uint8_t buffer[44];
-
-    struct iqs5xx_data *data = dev->data;
-
-    int res = iqs5xx_seq_read(dev, GestureEvents0_adr, buffer, 44);
-    iqs5xx_write(dev, END_WINDOW, 0, 1);
-    if (res < 0) {
-        return res;
+    // Three finger detection with improved timing
+    if(data->finger_count == 3 && !threeFingersPressed) {
+        threeFingerPressTime = currentTime;
+        threeFingersPressed = true;
+        LOG_DBG("Three fingers detected");
     }
 
-    // Gestures
-    data->raw_data.gestures0 = buffer[0];
-    data->raw_data.gestures1 = buffer[1];
-    // System info
-    data->raw_data.system_info0 = buffer[2];
-    data->raw_data.system_info1 = buffer[3];
-    // Number of fingers
-    data->raw_data.finger_count = buffer[4];
-    // Relative X position
-    data->raw_data.rx = buffer[5] << 8 | buffer[6];
-    // Relative Y position
-    data->raw_data.ry = buffer[7] << 8 | buffer[8];
+    if(data->finger_count == 0) {
+        accumPos.x = 0;
+        accumPos.y = 0;
 
-    // Fingers
-    for(int i = 0; i < 5; i++) {
-        const int p = 9 + (7 * i);
-        // Absolute X
-        data->raw_data.fingers[i].ax = buffer[p + 0] << 8 | buffer[p + 1];
-        // Absolute Y
-        data->raw_data.fingers[i].ay = buffer[p + 2] << 8 | buffer[p + 3];
-        // Touch strength
-        data->raw_data.fingers[i].strength = buffer[p + 4] << 8 | buffer[p + 5];
-        // Area
-        data->raw_data.fingers[i].area = buffer[p + 6];
-    }
-    return 0;
-}
+        // Handle three finger middle click
+        if(threeFingersPressed &&
+           (currentTime - threeFingerPressTime) < TRACKPAD_THREE_FINGER_CLICK_TIME) {
+            hasGesture = true;
+            LOG_DBG("Three finger middle click");
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, true);
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
+        }
+        threeFingersPressed = false;
 
-static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
-    const struct device *dev = arg;
-    ARG_UNUSED(unused2);
-    ARG_UNUSED(unused3);
-    struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *config = dev->config;
-
-    // Initialize device registers
-    struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
-
-    int err = iqs5xx_registers_init(dev, &iqs5xx_registers);
-    if(err) {
-        LOG_ERR("Failed to initialize IQS5xx registers!\r\n");
+        // Release hold if active
+        if(isHolding) {
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+            isHolding = false;
+            LOG_DBG("Released hold");
+        }
     }
 
-    int nstate = 0;
-    while (1) {
-        #ifdef CONFIG_IQS5XX_POLL
-            k_msleep(2);
+    // Reset scroll tracking if not two fingers
+    if(data->finger_count != 2) {
+        lastXScrollReport = 0;
+        lastYScrollReport = 0;
+    }
 
-            // Poll data ready pin using dt_spec
-            nstate = gpio_pin_get_dt(&config->dr_gpio);
-
-            if(nstate) {
-                iqs5xx_sample_fetch(dev);
-                if(data->data_ready_handler != NULL) {
-                    data->data_ready_handler(dev, &data->raw_data);
+    // Enhanced gesture handling with better debouncing
+    if((data->gestures0 || data->gestures1) && !hasGesture) {
+        switch(data->gestures1) {
+            case GESTURE_TWO_FINGER_TAP:
+                if((currentTime - lastTapTime) > TAP_DEBOUNCE_TIME) {
+                    hasGesture = true;
+                    lastTapTime = currentTime;
+                    LOG_DBG("Right click (two finger tap)");
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
                 }
+                break;
+
+            case GESTURE_SCROLLG:
+                hasGesture = true;
+
+                // FIXED: Correct scroll direction mapping
+                // For vertical scrolling: use data->ry (relative Y)
+                // For horizontal scrolling: use data->rx (relative X)
+                lastYScrollReport += data->ry;  // Vertical scroll accumulator
+                lastXScrollReport += data->rx;  // Horizontal scroll accumulator
+
+                int8_t vertical_scroll = 0;
+                int8_t horizontal_scroll = 0;
+
+                // Check for vertical scroll
+                if(abs(lastYScrollReport) >= SCROLL_REPORT_DISTANCE) {
+                    // Negative ry = scroll up, positive ry = scroll down
+                    vertical_scroll = (lastYScrollReport > 0) ? -1 : 1;
+                    lastYScrollReport = 0;
+                    LOG_DBG("Vertical scroll: %d", vertical_scroll);
+                }
+
+                // Check for horizontal scroll
+                if(abs(lastXScrollReport) >= SCROLL_REPORT_DISTANCE) {
+                    // Negative rx = scroll left, positive rx = scroll right
+                    horizontal_scroll = (lastXScrollReport > 0) ? 1 : -1;
+                    lastXScrollReport = 0;
+                    LOG_DBG("Horizontal scroll: %d", horizontal_scroll);
+                }
+
+                // Send scroll events
+                if (vertical_scroll != 0) {
+                    send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, vertical_scroll, true);
+                }
+                if (horizontal_scroll != 0) {
+                    send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, horizontal_scroll, true);
+                }
+                break;
+        }
+
+        switch(data->gestures0) {
+            case GESTURE_SINGLE_TAP:
+                if((currentTime - lastTapTime) > TAP_DEBOUNCE_TIME) {
+                    hasGesture = true;
+                    lastTapTime = currentTime;
+                    LOG_DBG("Left click (single tap)");
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                }
+                break;
+
+            case GESTURE_TAP_AND_HOLD:
+                if(!isHolding) {
+                    hasGesture = true;
+                    LOG_DBG("Drag start (tap and hold)");
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    isHolding = true;
+                }
+                break;
+        }
+    }
+
+    // Enhanced movement handling with better precision and filtering
+    if(!hasGesture && data->finger_count == 1) {
+        float sensMp = (float)mouseSensitivity / 128.0F;
+
+        // Apply movement threshold to reduce jitter
+        int16_t raw_x = -data->ry;  // Swapped and inverted for correct direction
+        int16_t raw_y = data->rx;   // Swapped for correct direction
+
+        if(abs(raw_x) >= MOVEMENT_THRESHOLD || abs(raw_y) >= MOVEMENT_THRESHOLD) {
+            accumPos.x += raw_x * sensMp;
+            accumPos.y += raw_y * sensMp;
+
+            int16_t xp = (int16_t)accumPos.x;
+            int16_t yp = (int16_t)accumPos.y;
+
+            if(abs(xp) >= 1 || abs(yp) >= 1) {
+                LOG_DBG("Mouse movement: x=%d, y=%d", xp, yp);
+                send_input_event(INPUT_EV_REL, INPUT_REL_X, xp, false);
+                send_input_event(INPUT_EV_REL, INPUT_REL_Y, yp, true);
+
+                // Subtract the integer part, keep the fractional part for better precision
+                accumPos.x -= xp;
+                accumPos.y -= yp;
             }
-        #elif CONFIG_IQS5XX_INTERRUPT
-            k_sem_take(&data->gpio_sem, K_FOREVER);
-
-            k_mutex_lock(&data->i2c_mutex, K_MSEC(100));
-            iqs5xx_sample_fetch(dev);
-            if(data->data_ready_handler != NULL) {
-                data->data_ready_handler(dev, &data->raw_data);
-            }
-            k_mutex_unlock(&data->i2c_mutex);
-        #endif
-    }
-}
-
-/**
- * @brief Sets the trigger handler
- */
-int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handler) {
-    struct iqs5xx_data *data = dev->data;
-    data->data_ready_handler = handler;
-    return 0;
-}
-
-/**
- * @brief Called when data ready pin goes active. Releases the semaphore allowing thread to run.
- */
-static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    struct iqs5xx_data *data = CONTAINER_OF(cb, struct iqs5xx_data, dr_cb);
-    k_sem_give(&data->gpio_sem);
-}
-
-/**
- * @brief Sets registers to initial values with optimized settings
- */
-int iqs5xx_registers_init(const struct device *dev, const struct iqs5xx_reg_config *config) {
-    struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *dev_config = dev->config;
-
-    k_mutex_lock(&data->i2c_mutex, K_MSEC(2000));
-
-    // Wait for dataready using dt_spec
-    while(!gpio_pin_get_dt(&dev_config->dr_gpio)) {
-        k_usleep(100);
+        }
     }
 
-    uint8_t buf = RESET_TP;
-    // Reset device
-    iqs5xx_write(dev, SystemControl1_adr, &buf, 1);
-    iqs5xx_write(dev, END_WINDOW, 0, 1);
-    k_msleep(5);
-
-    while(!gpio_pin_get_dt(&dev_config->dr_gpio)) {
-        k_usleep(100);
-    }
-
-    // Write register dump
-    iqs_regdump_err = iqs5xx_reg_dump(dev);
-
-    while(!gpio_pin_get_dt(&dev_config->dr_gpio)) {
-        k_usleep(100);
-    }
-
-    int err = 0;
-    uint8_t wbuff[16];
-
-    // Set active refresh rate
-    *((uint16_t*)wbuff) = SWPEND16(config->activeRefreshRate);
-    err |= iqs5xx_write(dev, ActiveRR_adr, wbuff, 2);
-
-    // Set idle refresh rate
-    *((uint16_t*)wbuff) = SWPEND16(config->idleRefreshRate);
-    err |= iqs5xx_write(dev, IdleRR_adr, wbuff, 2);
-
-    // Set single finger gestures
-    err |= iqs5xx_write(dev, SFGestureEnable_adr, &config->singleFingerGestureMask, 1);
-
-    // Set multi finger gestures
-    err |= iqs5xx_write(dev, MFGestureEnable_adr, &config->multiFingerGestureMask, 1);
-
-    // Set tap time
-    *((uint16_t*)wbuff) = SWPEND16(config->tapTime);
-    err |= iqs5xx_write(dev, TapTime_adr, wbuff, 2);
-
-    // Set tap distance
-    *((uint16_t*)wbuff) = SWPEND16(config->tapDistance);
-    err |= iqs5xx_write(dev, TapDistance_adr, wbuff, 2);
-
-    // Set touch multiplier
-    err |= iqs5xx_write(dev, GlobalTouchSet_adr, &config->touchMultiplier, 1);
-
-    // Set debounce settings
-    err |= iqs5xx_write(dev, ProxDb_adr, &config->debounce, 1);
-    err |= iqs5xx_write(dev, TouchSnapDb_adr, &config->debounce, 1);
-
-    // Disable noise reduction for better performance
-    wbuff[0] = 0;
-    err |= iqs5xx_write(dev, HardwareSettingsA_adr, wbuff, 1);
-
-    // Set i2c timeout
-    err |= iqs5xx_write(dev, I2CTimeout_adr, &config->i2cTimeout, 1);
-
-    // Set filter settings
-    err |= iqs5xx_write(dev, FilterSettings0_adr, &config->filterSettings, 1);
-    err |= iqs5xx_write(dev, DynamicBottomBeta_adr, &config->filterDynBottomBeta, 1);
-    err |= iqs5xx_write(dev, DynamicLowerSpeed_adr, &config->filterDynLowerSpeed, 1);
-
-    *((uint16_t*)wbuff) = SWPEND16(config->filterDynUpperSpeed);
-    err |= iqs5xx_write(dev, DynamicUpperSpeed_adr, wbuff, 2);
-
-    // Set initial scroll distance
-    *((uint16_t*)wbuff) = SWPEND16(config->initScrollDistance);
-    err |= iqs5xx_write(dev, ScrollInitDistance_adr, wbuff, 2);
-
-    // Terminate transaction
-    iqs5xx_write(dev, END_WINDOW, 0, 1);
-
-    k_mutex_unlock(&data->i2c_mutex);
-
-    return err;
+    lastFingerCount = data->finger_count;
 }
 
-static int iqs5xx_init(const struct device *dev) {
-    struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *config = dev->config;
+static int trackpad_init(void) {
+    trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
+    if (trackpad == NULL) {
+        LOG_ERR("Failed to get IQS5XX device");
+        return -EINVAL;
+    }
 
-    data->dev = dev;
-    k_mutex_init(&data->i2c_mutex);
-
-    // Check if DR GPIO is ready
-    if (!gpio_is_ready_dt(&config->dr_gpio)) {
-        LOG_ERR("DR GPIO device not ready");
+    // Verify device is ready
+    if (!device_is_ready(trackpad)) {
+        LOG_ERR("IQS5XX device not ready");
         return -ENODEV;
     }
 
-    // Configure data ready pin using dt_spec
-    int ret = gpio_pin_configure_dt(&config->dr_gpio, GPIO_INPUT);
-    if (ret < 0) {
-        LOG_ERR("Failed to configure DR pin: %d", ret);
-        return ret;
+    // Store reference for input events
+    trackpad_device = trackpad;
+
+    // Initialize accumulator
+    accumPos.x = 0;
+    accumPos.y = 0;
+
+    int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
+    if(err) {
+        LOG_ERR("Failed to set trackpad trigger handler: %d", err);
+        return -EINVAL;
     }
 
-    #if CONFIG_IQS5XX_INTERRUPT
-    // Blocking semaphore as a flag for sensor read
-    k_sem_init(&data->gpio_sem, 0, UINT_MAX);
-
-    // Initialize interrupt callback
-    gpio_init_callback(&data->dr_cb, iqs5xx_callback, BIT(config->dr_gpio.pin));
-
-    // Add callback
-    ret = gpio_add_callback(config->dr_gpio.port, &data->dr_cb);
-    if (ret < 0) {
-        LOG_ERR("Failed to add GPIO callback: %d", ret);
-        return ret;
-    }
-
-    // Configure data ready interrupt
-    ret = gpio_pin_interrupt_configure_dt(&config->dr_gpio, GPIO_INT_EDGE_TO_ACTIVE);
-    if (ret < 0) {
-        LOG_ERR("Failed to configure DR interrupt: %d", ret);
-        return ret;
-    }
-    #endif
-
-    LOG_INF("IQS5XX driver initialized successfully");
+    LOG_INF("Enhanced trackpad gesture handler initialized successfully");
     return 0;
 }
 
-// Device instantiation macros following gesture repo pattern
-#define IQS5XX_CONFIG(inst)                                                   \
-    static const struct iqs5xx_config iqs5xx_config_##inst = {                \
-        .dr_gpio = GPIO_DT_SPEC_INST_GET(inst, dr_gpios),                     \
-        .invert_x = DT_INST_PROP(inst, invert_x),                             \
-        .invert_y = DT_INST_PROP(inst, invert_y),                             \
-    };
-
-#define IQS5XX_DEFINE(inst)                                                   \
-    static struct iqs5xx_data iqs5xx_data_##inst = {                          \
-        .i2c = DEVICE_DT_GET(DT_INST_BUS(inst)),                              \
-        .data_ready_handler = NULL                                             \
-    };                                                                         \
-                                                                               \
-    IQS5XX_CONFIG(inst);                                                       \
-                                                                               \
-    DEVICE_DT_INST_DEFINE(inst, iqs5xx_init, NULL,                           \
-                          &iqs5xx_data_##inst, &iqs5xx_config_##inst,         \
-                          POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY,       \
-                          NULL);                                               \
-                                                                               \
-    K_THREAD_DEFINE(iqs5xx_thread_##inst, 1024, iqs5xx_thread,               \
-                    DEVICE_DT_INST_GET(inst), NULL, NULL,                     \
-                    K_PRIO_COOP(10), 0, 0);
-
-DT_INST_FOREACH_STATUS_OKAY(IQS5XX_DEFINE)
+SYS_INIT(trackpad_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
