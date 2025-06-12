@@ -16,11 +16,12 @@
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 // ===== TUNED CONSTANTS =====
-#define THREE_FINGER_SWIPE_THRESHOLD        100     // Reduced for easier triggering
-#define THREE_FINGER_TAP_TIMEOUT            200     // Reduced timeout
-#define CIRCULAR_SCROLL_SENSITIVITY         8.0f    // More sensitive scrolling
-#define MOVEMENT_THRESHOLD                  5       // Minimum movement to register
-#define FINGER_STRENGTH_THRESHOLD           50      // Lower threshold for finger detection
+#define THREE_FINGER_SWIPE_THRESHOLD        50      // Much lower threshold for easier swipes
+#define THREE_FINGER_TAP_TIMEOUT            300     // Longer timeout for stability
+#define CIRCULAR_SCROLL_SENSITIVITY         12.0f   // Less sensitive to avoid interference
+#define MOVEMENT_THRESHOLD                  3       // Lower threshold for responsiveness
+#define FINGER_STRENGTH_THRESHOLD           30      // Even lower for better detection
+#define THREE_FINGER_STABILITY_COUNT        2       // Require stable count for N cycles
 #define TRACKPAD_WIDTH                      1024
 #define TRACKPAD_HEIGHT                     1024
 
@@ -65,7 +66,10 @@ static struct {
 
 // General state
 static uint8_t last_finger_count = 0;
+static uint8_t stable_finger_count = 0;
+static uint8_t finger_stability_counter = 0;
 static uint8_t mouse_sensitivity = 128;
+static bool disable_circular_scroll = false;  // Flag to disable problematic circular scroll
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846f
@@ -86,6 +90,8 @@ static float calculate_angle(uint16_t x, uint16_t y) {
 }
 
 static bool is_in_scroll_rim(uint16_t x, uint16_t y) {
+    if (disable_circular_scroll) return false;  // Allow disabling if problematic
+
     uint32_t dist_sq = (x - circular_scroll.center_x) * (x - circular_scroll.center_x) +
                        (y - circular_scroll.center_y) * (y - circular_scroll.center_y);
     return (dist_sq >= circular_scroll.inner_radius_sq && dist_sq <= circular_scroll.outer_radius_sq);
@@ -98,32 +104,45 @@ static float normalize_angle_diff(float angle1, float angle2) {
     return diff;
 }
 
-// ===== IMPROVED FINGER DETECTION =====
-static uint8_t detect_finger_count(const struct iqs5xx_rawdata *data) {
-    // Primary detection: use hardware finger count if reliable
-    if (data->finger_count > 0 && data->finger_count <= 5) {
-        return data->finger_count;
-    }
+// ===== IMPROVED FINGER DETECTION WITH STABILITY =====
+static uint8_t detect_finger_count_stable(const struct iqs5xx_rawdata *data) {
+    uint8_t detected_count = 0;
 
-    // Secondary detection: count fingers with strength above threshold
-    uint8_t active_fingers = 0;
-    for (int i = 0; i < 5; i++) {
-        if (data->fingers[i].strength > FINGER_STRENGTH_THRESHOLD) {
-            active_fingers++;
+    // Primary: hardware finger count if reasonable
+    if (data->finger_count > 0 && data->finger_count <= 5) {
+        detected_count = data->finger_count;
+    } else {
+        // Secondary: count active fingers by strength
+        for (int i = 0; i < 5; i++) {
+            if (data->fingers[i].strength > FINGER_STRENGTH_THRESHOLD) {
+                detected_count++;
+            }
+        }
+
+        // Fallback: movement-based for when strength detection fails
+        if (detected_count == 0) {
+            uint32_t movement = abs(data->rx) + abs(data->ry);
+            if (movement > 80) detected_count = 3;
+            else if (movement > 25) detected_count = 2;
+            else if (movement > 3) detected_count = 1;
         }
     }
 
-    if (active_fingers > 0) {
-        return active_fingers;
+    // Stability filtering - require same count for multiple cycles
+    if (detected_count == last_finger_count) {
+        finger_stability_counter++;
+        if (finger_stability_counter >= THREE_FINGER_STABILITY_COUNT) {
+            stable_finger_count = detected_count;
+        }
+    } else {
+        finger_stability_counter = 0;
+        // For immediate responsiveness on finger lift, allow 0 finger count through
+        if (detected_count == 0) {
+            stable_finger_count = 0;
+        }
     }
 
-    // Fallback: movement-based detection
-    uint32_t movement = abs(data->rx) + abs(data->ry);
-    if (movement > 100) return 3;      // Large movement = likely multi-finger
-    if (movement > 30) return 2;       // Medium movement = likely two fingers
-    if (movement > 5) return 1;        // Small movement = one finger
-
-    return 0;
+    return stable_finger_count;
 }
 
 // ===== GESTURE HANDLERS =====
@@ -185,7 +204,7 @@ static void handle_three_finger_movement(const struct iqs5xx_rawdata *data) {
     int16_t delta_y = current_y - three_finger.start_y;
     uint32_t total_movement = abs(delta_x) + abs(delta_y);
 
-    LOG_DBG("3-finger movement: dx=%d, dy=%d, total=%d", delta_x, delta_y, total_movement);
+    LOG_DBG("handle_three_finger_movement: 3-finger movement: dx=%d, dy=%d, total=%d", delta_x, delta_y, total_movement);
 
     if (total_movement > THREE_FINGER_SWIPE_THRESHOLD) {
         three_finger.swipe_detected = true;
@@ -239,6 +258,12 @@ static void handle_three_finger_end(void) {
 }
 
 static void handle_circular_scroll(const struct iqs5xx_rawdata *data) {
+    // Skip circular scroll if disabled or if movement is too small (likely accidental)
+    uint32_t movement = abs(data->rx) + abs(data->ry);
+    if (disable_circular_scroll || movement < 8) {
+        return;
+    }
+
     uint16_t touch_x = data->fingers[0].ax;
     uint16_t touch_y = data->fingers[0].ay;
 
@@ -324,7 +349,7 @@ static void handle_two_finger_scroll(const struct iqs5xx_rawdata *data) {
 
 // ===== MAIN TRIGGER HANDLER =====
 static void enhanced_trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
-    uint8_t finger_count = detect_finger_count(data);
+    uint8_t finger_count = detect_finger_count_stable(data);
     bool finger_count_changed = (finger_count != last_finger_count);
 
     // Log finger count changes
@@ -348,13 +373,15 @@ static void enhanced_trackpad_trigger_handler(const struct device *dev, const st
         handle_three_finger_end();
     }
 
-    // Handle single-finger gestures (circular scroll or cursor movement)
-    else if (finger_count == 1) {
+    // Handle single-finger gestures (only if not in three-finger gesture)
+    else if (finger_count == 1 && !three_finger.active) {
         // Reset two-finger scroll state
         two_finger_scroll.last_x_report = 0;
 
-        // Try circular scroll first
-        handle_circular_scroll(data);
+        // Try circular scroll first (but only if enabled and movement is significant)
+        if (!disable_circular_scroll) {
+            handle_circular_scroll(data);
+        }
 
         // If not circular scrolling, handle cursor movement
         if (current_gesture != GESTURE_CIRCULAR_SCROLL) {
@@ -363,7 +390,7 @@ static void enhanced_trackpad_trigger_handler(const struct device *dev, const st
     }
 
     // Handle two-finger scroll
-    else if (finger_count == 2) {
+    else if (finger_count == 2 && !three_finger.active) {
         // End any circular scroll
         if (circular_scroll.active) {
             circular_scroll.active = false;
@@ -394,7 +421,7 @@ static void enhanced_trackpad_trigger_handler(const struct device *dev, const st
 
     // ===== BUILT-IN GESTURE HANDLING =====
     // Only process if no enhanced gesture is active
-    if (current_gesture == GESTURE_NONE && (data->gestures0 || data->gestures1)) {
+    if (!three_finger.active && current_gesture == GESTURE_NONE && (data->gestures0 || data->gestures1)) {
         if (data->gestures0 & GESTURE_SINGLE_TAP) {
             LOG_DBG("Single tap detected");
             send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
