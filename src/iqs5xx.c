@@ -22,6 +22,15 @@ LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
         #pragma message "DEVICETREE: azoteq,iqs5xx node EXISTS and HAS dr-gpios property"
     #else
         #pragma message "DEVICETREE: azoteq,iqs5xx node EXISTS but MISSING dr-gpios property"
+
+        // Check if the property exists under a different name
+        #if DT_NODE_HAS_PROP(DT_DRV_INST(0), gpios)
+            #pragma message "DEVICETREE: But found 'gpios' property"
+        #endif
+
+        #if DT_NODE_HAS_PROP(DT_DRV_INST(0), data_ready_gpios)
+            #pragma message "DEVICETREE: But found 'data-ready-gpios' property"
+        #endif
     #endif
 #else
     #pragma message "DEVICETREE: azoteq,iqs5xx node DOES NOT EXIST"
@@ -518,18 +527,10 @@ static struct iqs5xx_data iqs5xx_data_0 = {
     .data_ready_handler = NULL
 };
 
-// Device configuration from devicetree - SIMPLIFIED with debugging
+// Device configuration from devicetree - TEMPORARY WORKAROUND
 static const struct iqs5xx_config iqs5xx_config_0 = {
-    // Add compile-time devicetree checks
-    #if DT_NODE_EXISTS(DT_DRV_INST(0))
-        #if DT_NODE_HAS_PROP(DT_DRV_INST(0), dr_gpios)
-            .dr = GPIO_DT_SPEC_GET(DT_DRV_INST(0), dr_gpios),
-        #else
-            .dr = {0}, // Property missing - this is likely the issue
-        #endif
-    #else
-        .dr = {0}, // Node missing
-    #endif
+    // Try using a standard GPIO property that doesn't need custom binding
+    .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), gpios, {}),
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,
