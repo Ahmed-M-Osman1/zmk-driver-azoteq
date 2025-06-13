@@ -16,25 +16,101 @@
 
 LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// Compile-time devicetree debugging
-#if DT_NODE_EXISTS(DT_DRV_INST(0))
-    #if DT_NODE_HAS_PROP(DT_DRV_INST(0), dr_gpios)
-        #pragma message "DEVICETREE: azoteq,iqs5xx node EXISTS and HAS dr-gpios property"
-    #else
-        #pragma message "DEVICETREE: azoteq,iqs5xx node EXISTS but MISSING dr-gpios property"
+// EXTENSIVE DEVICETREE DEBUGGING - Print everything we can find
+#pragma message "=== DEVICETREE DEBUG START ==="
 
-        // Check if the property exists under a different name
+// Check if our driver instance exists
+#if DT_NODE_EXISTS(DT_DRV_INST(0))
+    #pragma message "✓ DT_DRV_INST(0) exists"
+
+    // Print the node path
+    #define STRINGIFY(x) #x
+    #define TOSTRING(x) STRINGIFY(x)
+    #pragma message "Node path: " TOSTRING(DT_DRV_INST(0))
+
+    // Check compatible string
+    #if DT_NODE_HAS_COMPAT(DT_DRV_INST(0), azoteq_iqs5xx)
+        #pragma message "✓ Compatible string 'azoteq,iqs5xx' matches"
+    #else
+        #pragma message "✗ Compatible string does NOT match"
+    #endif
+
+    // Check if it's enabled
+    #if DT_NODE_HAS_STATUS(DT_DRV_INST(0), okay)
+        #pragma message "✓ Node status is 'okay'"
+    #else
+        #pragma message "✗ Node status is NOT 'okay'"
+    #endif
+
+    // Check I2C bus
+    #if DT_NODE_HAS_PROP(DT_DRV_INST(0), reg)
+        #pragma message "✓ Has 'reg' property (I2C address)"
+    #else
+        #pragma message "✗ Missing 'reg' property"
+    #endif
+
+    // Check GPIO properties with different names
+    #if DT_NODE_HAS_PROP(DT_DRV_INST(0), dr_gpios)
+        #pragma message "✓ SUCCESS: Found 'dr-gpios' property"
+    #else
+        #pragma message "✗ Missing 'dr-gpios' property"
+
         #if DT_NODE_HAS_PROP(DT_DRV_INST(0), gpios)
-            #pragma message "DEVICETREE: But found 'gpios' property"
+            #pragma message "  → But found 'gpios' property"
         #endif
 
         #if DT_NODE_HAS_PROP(DT_DRV_INST(0), data_ready_gpios)
-            #pragma message "DEVICETREE: But found 'data-ready-gpios' property"
+            #pragma message "  → But found 'data-ready-gpios' property"
+        #endif
+
+        #if DT_NODE_HAS_PROP(DT_DRV_INST(0), interrupt_gpios)
+            #pragma message "  → But found 'interrupt-gpios' property"
+        #endif
+
+        #if DT_NODE_HAS_PROP(DT_DRV_INST(0), irq_gpios)
+            #pragma message "  → But found 'irq-gpios' property"
         #endif
     #endif
+
+    // Check other properties from binding
+    #if DT_NODE_HAS_PROP(DT_DRV_INST(0), sensitivity)
+        #pragma message "✓ Has 'sensitivity' property"
+    #else
+        #pragma message "  Missing 'sensitivity' property"
+    #endif
+
+    #if DT_NODE_HAS_PROP(DT_DRV_INST(0), refresh_rate_active)
+        #pragma message "✓ Has 'refresh-rate-active' property"
+    #else
+        #pragma message "  Missing 'refresh-rate-active' property"
+    #endif
+
+    // Check parent bus
+    #if DT_NODE_EXISTS(DT_BUS(DT_DRV_INST(0)))
+        #pragma message "✓ Parent I2C bus exists"
+
+        #if DT_NODE_HAS_STATUS(DT_BUS(DT_DRV_INST(0)), okay)
+            #pragma message "✓ Parent I2C bus is enabled"
+        #else
+            #pragma message "✗ Parent I2C bus is NOT enabled"
+        #endif
+    #else
+        #pragma message "✗ Parent I2C bus does NOT exist"
+    #endif
+
 #else
-    #pragma message "DEVICETREE: azoteq,iqs5xx node DOES NOT EXIST"
+    #pragma message "✗ CRITICAL: DT_DRV_INST(0) does NOT exist"
+    #pragma message "This means no device with compatible 'azoteq,iqs5xx' was found"
+
+    // Check if ANY azoteq,iqs5xx nodes exist anywhere
+    #if DT_HAS_COMPAT_STATUS_OKAY(azoteq_iqs5xx)
+        #pragma message "But there ARE enabled azoteq,iqs5xx nodes somewhere in DT"
+    #else
+        #pragma message "NO azoteq,iqs5xx nodes found anywhere in devicetree"
+    #endif
 #endif
+
+#pragma message "=== DEVICETREE DEBUG END ==="
 
 static int iqs_regdump_err = 0;
 
@@ -435,23 +511,37 @@ static int iqs5xx_init(const struct device *dev) {
     }
     LOG_INF("I2C device: %p", data->i2c);
 
-    // Check if GPIO spec is valid
-    LOG_INF("=== GPIO DEBUG INFO ===");
+    // RUNTIME DEVICETREE DEBUG
+    LOG_INF("=== RUNTIME DEVICETREE DEBUG ===");
+    LOG_INF("Device name: %s", dev->name);
     LOG_INF("Config pointer: %p", config);
-    LOG_INF("DR GPIO port pointer: %p", config->dr.port);
-    LOG_INF("DR GPIO pin: %d", config->dr.pin);
-    LOG_INF("DR GPIO dt_flags: 0x%02x", config->dr.dt_flags);
 
-    if (!config->dr.port) {
-        LOG_ERR("Data ready GPIO port is NULL - check devicetree configuration");
-        LOG_ERR("This means the GPIO_DT_SPEC_GET failed");
+    // Check if GPIO was properly initialized by GPIO_DT_SPEC_GET_OR
+    if (!device_is_ready(config->dr.port)) {
+        LOG_ERR("Data ready GPIO port is not ready!");
         LOG_ERR("Possible causes:");
-        LOG_ERR("1. Wrong I2C bus name (try &i2c0 instead of &pro_micro_i2c)");
+        LOG_ERR("1. dr-gpios property not found in devicetree");
         LOG_ERR("2. GPIO controller not enabled");
-        LOG_ERR("3. Devicetree syntax error");
-        return -ENODEV;
+        LOG_ERR("3. Wrong GPIO pin number or controller");
+        LOG_ERR("4. Devicetree binding not properly loaded");
+
+        // Check if it's an empty GPIO spec (fallback case)
+        if (config->dr.port == NULL) {
+            LOG_ERR("GPIO port is NULL - this means dr-gpios was not found in devicetree");
+            LOG_ERR("Check your overlay file and make sure:");
+            LOG_ERR("  - trackpad node has 'compatible = \"azoteq,iqs5xx\"'");
+            LOG_ERR("  - trackpad node has 'dr-gpios = <&gpio0 X GPIO_ACTIVE_HIGH>'");
+            LOG_ERR("  - gpio0 controller is enabled with 'status = \"okay\"'");
+            return -ENODEV;
+        } else {
+            LOG_ERR("GPIO controller exists but not ready");
+            LOG_ERR("GPIO controller: %p", config->dr.port);
+            LOG_ERR("Try enabling the GPIO controller in devicetree");
+            return -ENODEV;
+        }
     }
-    LOG_INF("DR GPIO: port=%p, pin=%d, dt_flags=0x%02x",
+
+    LOG_INF("✓ DR GPIO: port=%p, pin=%d, dt_flags=0x%02x",
             config->dr.port, config->dr.pin, config->dr.dt_flags);
 
     k_mutex_init(&data->i2c_mutex);
@@ -527,10 +617,9 @@ static struct iqs5xx_data iqs5xx_data_0 = {
     .data_ready_handler = NULL
 };
 
-// Device configuration from devicetree - TEMPORARY WORKAROUND
+// Device configuration from devicetree - SAFE VERSION WITH FALLBACK
 static const struct iqs5xx_config iqs5xx_config_0 = {
-    // Try using a standard GPIO property that doesn't need custom binding
-    .dr = GPIO_DT_SPEC_GET(DT_DRV_INST(0), dr_gpios),
+    .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,
