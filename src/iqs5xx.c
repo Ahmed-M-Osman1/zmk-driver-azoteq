@@ -16,6 +16,17 @@
 
 LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
+// Compile-time devicetree debugging
+#if DT_NODE_EXISTS(DT_DRV_INST(0))
+    #if DT_NODE_HAS_PROP(DT_DRV_INST(0), dr_gpios)
+        #pragma message "DEVICETREE: azoteq,iqs5xx node EXISTS and HAS dr-gpios property"
+    #else
+        #pragma message "DEVICETREE: azoteq,iqs5xx node EXISTS but MISSING dr-gpios property"
+    #endif
+#else
+    #pragma message "DEVICETREE: azoteq,iqs5xx node DOES NOT EXIST"
+#endif
+
 static int iqs_regdump_err = 0;
 
 // Default config
@@ -509,10 +520,15 @@ static struct iqs5xx_data iqs5xx_data_0 = {
 
 // Device configuration from devicetree - SIMPLIFIED with debugging
 static const struct iqs5xx_config iqs5xx_config_0 = {
-    #if DT_NODE_HAS_PROP(DT_DRV_INST(0), dr_gpios)
-        .dr = GPIO_DT_SPEC_GET(DT_DRV_INST(0), dr_gpios),
+    // Add compile-time devicetree checks
+    #if DT_NODE_EXISTS(DT_DRV_INST(0))
+        #if DT_NODE_HAS_PROP(DT_DRV_INST(0), dr_gpios)
+            .dr = GPIO_DT_SPEC_GET(DT_DRV_INST(0), dr_gpios),
+        #else
+            .dr = {0}, // Property missing - this is likely the issue
+        #endif
     #else
-        .dr = {0}, // Initialize to zero if no GPIO property
+        .dr = {0}, // Node missing
     #endif
 };
 
