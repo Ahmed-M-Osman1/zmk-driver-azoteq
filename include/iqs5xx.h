@@ -330,4 +330,103 @@ int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handle
 #define	ATICompensation_adr		0x043F	//(READ/WRITE)  	//150 BYTES;
 #define ATICAdjust_adr         	0x04D5	//(READ/WRITE/E2)	//150 BYTES;
 #define GlobalATIC_adr         	0x056B	//(READ/WRITE/E2)
-#define ALPATIC_adr
+#define ALPATIC_adr				0x056C	//(READ/WRITE/E2)
+#define ATITarget_adr			0x056D	//(READ/WRITE/E2)	//2 BYTES;
+#define ALPATITarget_adr		0x056F	//(READ/WRITE/E2)	//2 BYTES;
+#define RefDriftLimit_adr		0x0571	//(READ/WRITE/E2)
+#define ALPLTADriftLimit_adr	0x0572	//(READ/WRITE/E2)
+#define ReATILowerLimit_adr		0x0573	//(READ/WRITE/E2)
+#define ReATIUpperLimit_adr		0x0574	//(READ/WRITE/E2)
+#define MaxCountLimit_adr		0x0575	//(READ/WRITE/E2)	//2 BYTES;
+#define ReATIRetryTime_adr		0x0577	//(READ/WRITE/E2)
+/******************** TIMING SETTINGS REGISTERS ***************************/
+#define ActiveRR_adr		0x057A	//(READ/WRITE/E2)   //2 BYTES;
+#define	IdleTouchRR_adr			0x057C	//(READ/WRITE/E2)	//2 BYTES;
+#define	IdleRR_adr				0x057E	//(READ/WRITE/E2)	//2 BYTES;
+#define	LP1RR_adr				0x0580	//(READ/WRITE/E2)	//2 BYTES;
+#define	LP2RR_adr				0x0582	//(READ/WRITE/E2)	//2 BYTES;
+#define	ActiveTimeout_adr		0x0584	//(READ/WRITE/E2)
+#define IdleTouchTimeout_adr	0x0585	//(READ/WRITE/E2)
+#define	IdleTimeout_adr			0x0586	//(READ/WRITE/E2)
+#define	LP1Timeout_adr			0x0587	//(READ/WRITE/E2)
+#define	RefUpdateTime_adr		0x0588	//(READ/WRITE/E2)
+#define	SnapTimeout_adr			0x0589	//(READ/WRITE/E2)
+#define	I2CTimeout_adr			0x058A	//(READ/WRITE/E2)
+/******************** SYSTEM CONFIG REGISTERS ***************************/
+#define SystemConfig0_adr  		0x058E	//(READ/WRITE/E2)
+#define SystemConfig1_adr  		0x058F	//(READ/WRITE/E2)
+/******************** THRESHOLD SETTINGS REGISTERS ***************************/
+#define SnapThreshold_adr      	0x0592	//(READ/WRITE/E2)   //2 BYTES;
+#define	ProxThreshold_adr		0x0594	//(READ/WRITE/E2)
+#define	ALPProxThreshold_adr	0x0595	//(READ/WRITE/E2)
+#define	GlobalTouchSet_adr		0x0596	//(READ/WRITE/E2)
+#define	GlobalTouchClear_adr	0x0597	//(READ/WRITE/E2)
+#define	IndivTouchAdjust_adr	0x0598	//(READ/WRITE/E2)	//150 BYTES;
+/******************** FILTER SETTINGS REGISTERS ***************************/
+#define	FilterSettings0_adr		0x0632	//(READ/WRITE/E2)
+#define	XYStaticBeta_adr		0x0633	//(READ/WRITE/E2)
+#define	ALPCountBeta_adr		0x0634	//(READ/WRITE/E2)
+#define	ALP1LTABeta_adr			0x0635	//(READ/WRITE/E2)
+#define	ALP2LTABeta_adr			0x0636	//(READ/WRITE/E2)
+#define	DynamicBottomBeta_adr	0x0637	//(READ/WRITE/E2)
+#define	DynamicLowerSpeed_adr	0x0638	//(READ/WRITE/E2)
+#define	DynamicUpperSpeed_adr	0x0639	//(READ/WRITE/E2)   //2 BYTES;
+/******************** CHANNEL SET UP (RX-TX MAPPING) REGISTERS ***************************/
+#define	TotalRx_adr				0x063D	//(READ/WRITE/E2)
+#define	TotalTx_adr				0x063E	//(READ/WRITE/E2)
+#define	RxMapping_adr			0x063F	//(READ/WRITE/E2)	//10 BYTES;
+#define	TxMapping_adr			0x0649	//(READ/WRITE/E2)	//15 BYTES;
+#define	ALPChannelSetup0_adr	0x0658	//(READ/WRITE/E2)
+#define	ALPRxSelect_adr			0x0659	//(READ/WRITE/E2)	//2 BYTES;
+#define	ALPTxSelect_adr			0x065B	//(READ/WRITE/E2)	//2 BYTES;
+#define IQS525RxToTx_adr		0x065D  //(READ/WRITE/E2)
+/******************** HARDWARE SETTINGS REGISTERS ***************************/
+#define	HardwareSettingsA_adr	0x065F	//(READ/WRITE/E2)
+#define	HardwareSettingsB1_adr	0x0660	//(READ/WRITE/E2)
+#define	HardwareSettingsB2_adr	0x0661	//(READ/WRITE/E2)
+#define	HardwareSettingsC1_adr	0x0662	//(READ/WRITE/E2)
+#define	HardwareSettingsC2_adr	0x0663	//(READ/WRITE/E2)
+#define	HardwareSettingsD1_adr	0x0664	//(READ/WRITE/E2)
+#define	HardwareSettingsD2_adr	0x0665	//(READ/WRITE/E2)
+/******************** XY CONFIG REGISTERS ***************************/
+#define	XYConfig0_adr			0x0669	//(READ/WRITE/E2)
+#define	MaxMultitouches_adr		0x066A	//(READ/WRITE/E2)
+#define	FingerSplitFactor_adr	0x066B	//(READ/WRITE/E2)
+#define	PalmRejectThreshold_adr	0x066C	//(READ/WRITE/E2)
+#define	PalmRejectTimeout_adr	0x066D	//(READ/WRITE/E2)
+#define	XResolution_adr			0x066E	//(READ/WRITE/E2)	//2 BYTES;
+#define	YResolution_adr			0x0670	//(READ/WRITE/E2)	//2 BYTES;
+#define	StationaryTouchThr_adr	0x0672	//(READ/WRITE/E2)
+/*********************************************************************/
+#define	DefaultReadAdr_adr		0x0675	//(READ/WRITE/E2)
+/******************** DEBOUNCE SETTING REGISTERS ***************************/
+#define	ProxDb_adr				0x0679	//(READ/WRITE/E2)
+#define	TouchSnapDb_adr			0x067A	//(READ/WRITE/E2)
+/******************** CHANNEL CONFIG REGISTERS ***************************/
+#define	ActiveChannels_adr		0x067B	//(READ/WRITE/E2)	//30 BYTES;
+#define	SnapChannels_adr		0x0699	//(READ/WRITE/E2)   //30 BYTES;
+/******************** GESTURE SETTING REGISTERS ***************************/
+#define	SFGestureEnable_adr		0x06B7	//(READ/WRITE/E2)
+#define	MFGestureEnable_adr		0x06B8	//(READ/WRITE/E2)
+#define	TapTime_adr				0x06B9	//(READ/WRITE/E2)	//2 BYTES;
+#define	TapDistance_adr			0x06BB	//(READ/WRITE/E2)	//2 BYTES;
+#define HoldTime_adr           	0x06BD	//(READ/WRITE/E2)   //2 BYTES;
+#define	SwipeInitTime_adr		0x06BF	//(READ/WRITE/E2)	//2 BYTES;
+#define	SwipeInitDistance_adr	0x06C1	//(READ/WRITE/E2)	//2 BYTES;
+#define	SwipeConsTime_adr		0x06C2	//(READ/WRITE/E2)	//2 BYTES;
+#define	SwipeConsDistance_adr	0x06C5	//(READ/WRITE/E2)	//2 BYTES;
+#define	SwipeAngle_adr			0x06C7	//(READ/WRITE/E2)
+#define	ScrollInitDistance_adr	0x06C8	//(READ/WRITE/E2)	//2 BYTES;
+#define	ScrollAngle_adr			0x06CA	//(READ/WRITE/E2)
+#define	ZoomInitDistance_adr	0x06CB	//(READ/WRITE/E2)	//2 BYTES;
+#define	ZoomConsDistance_adr	0x06CD	//(READ/WRITE/E2)	//2 BYTES;
+
+
+// Register dumping
+
+// Start dump from 04D5
+#define IQS5XX_REG_DUMP_START_ADDRESS   0x04D5
+// Write 504 bytes
+#define IQS5XX_REG_DUMP_SIZE            504
+// Dump data
+extern const unsigned char _iqs5xx_regdump[IQS5XX_REG_DUMP_SIZE];

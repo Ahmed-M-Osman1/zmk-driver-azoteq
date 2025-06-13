@@ -2,15 +2,9 @@ description: |
   Sensor driver for the Azoteq IQS5XX trackpad IC
 compatible: "azoteq,iqs5xx"
 
-include: base.yaml
-
-on-bus: i2c
+include: ["i2c-device.yaml"]
 
 properties:
-  label:
-    type: string
-    required: true
-
   dr-gpios:
     type: phandle-array
     required: true
@@ -18,11 +12,27 @@ properties:
 
   invert-x:
     type: boolean
+    description: Invert X-axis movement
 
   invert-y:
     type: boolean
+    description: Invert Y-axis movement
 
-  # support input device
-  input:
-    type: phandle
-    description: Input device for trackpad events
+  no-taps:
+    type: boolean
+    description: Disable tap detection
+
+  sensitivity:
+    type: int
+    default: 128
+    description: Mouse sensitivity multiplier (64=slower, 128=normal, 256=faster)
+
+  refresh-rate-active:
+    type: int
+    default: 5
+    description: Active refresh rate in milliseconds
+
+  refresh-rate-idle:
+    type: int
+    default: 20
+    description: Idle refresh rate in milliseconds
