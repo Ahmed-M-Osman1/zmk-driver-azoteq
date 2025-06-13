@@ -416,12 +416,19 @@ static int iqs5xx_init(const struct device *dev) {
     LOG_INF("I2C device: %p", data->i2c);
 
     // Check if GPIO spec is valid
-    LOG_INF("ahmed ::: print config dr: %p", config->dr);
-    LOG_INF("ahmed ::: print config: %p", config);
+    LOG_INF("=== GPIO DEBUG INFO ===");
+    LOG_INF("Config pointer: %p", config);
+    LOG_INF("DR GPIO port pointer: %p", config->dr.port);
+    LOG_INF("DR GPIO pin: %d", config->dr.pin);
+    LOG_INF("DR GPIO dt_flags: 0x%02x", config->dr.dt_flags);
 
     if (!config->dr.port) {
-        LOG_INF("ahmed 22 ::: print config: %p", config);
         LOG_ERR("Data ready GPIO port is NULL - check devicetree configuration");
+        LOG_ERR("This means the GPIO_DT_SPEC_GET failed");
+        LOG_ERR("Possible causes:");
+        LOG_ERR("1. Wrong I2C bus name (try &i2c0 instead of &pro_micro_i2c)");
+        LOG_ERR("2. GPIO controller not enabled");
+        LOG_ERR("3. Devicetree syntax error");
         return -ENODEV;
     }
     LOG_INF("DR GPIO: port=%p, pin=%d, dt_flags=0x%02x",
@@ -500,9 +507,13 @@ static struct iqs5xx_data iqs5xx_data_0 = {
     .data_ready_handler = NULL
 };
 
-// Device configuration from devicetree - SIMPLIFIED
+// Device configuration from devicetree - SIMPLIFIED with debugging
 static const struct iqs5xx_config iqs5xx_config_0 = {
-    .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
+    #if DT_NODE_HAS_PROP(DT_DRV_INST(0), dr_gpios)
+        .dr = GPIO_DT_SPEC_GET(DT_DRV_INST(0), dr_gpios),
+    #else
+        .dr = {0}, // Initialize to zero if no GPIO property
+    #endif
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,
