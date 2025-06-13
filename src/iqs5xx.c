@@ -6,7 +6,6 @@
 #define DT_DRV_COMPAT azoteq_iqs5xx
 
 #include <zephyr/drivers/gpio.h>
-#include <nrfx_gpiote.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/logging/log.h>
@@ -36,7 +35,6 @@ struct iqs5xx_reg_config iqs5xx_reg_config_default () {
         regconf.filterDynBottomBeta =        15;  // Reduced for less filtering
         regconf.filterDynLowerSpeed =        10;  // Reduced for faster response
         regconf.filterDynUpperSpeed =        200; // Increased for better fast movements
-
         regconf.initScrollDistance =        10;   // Reduced for easier scrolling
 
         return regconf;
@@ -44,13 +42,6 @@ struct iqs5xx_reg_config iqs5xx_reg_config_default () {
 
 /**
  * @brief Read from the iqs550 chip via i2c
- * example: iqs5xx_seq_read(dev, GestureEvents0_adr, buffer, 44)
- *
- * @param dev Pointer to device driver MASTER
- * @param start start address for reading
- * @param  pointer to buffer to be read into
- * @param len number of bytes to read
- * @return int
  */
 static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8_t *read_buf,
                            const uint8_t len) {
@@ -61,12 +52,6 @@ static int iqs5xx_seq_read(const struct device *dev, const uint16_t start, uint8
 
 /**
  * @brief Write to the iqs550 chip via i2c
- * example: iqs5xx_write(dev, GestureEvents0_adr, buffer, 44)
- * @param dev Pointer to device driver MASTER
- * @param start address of the i2c slave
- * @param buf Buffer to be written
- * @param len number of bytes to write
- * @return int
  */
 static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, const uint8_t *buf,
                         uint32_t num_bytes) {
@@ -92,12 +77,6 @@ static int iqs5xx_write(const struct device *dev, const uint16_t start_addr, con
 
 static int iqs5xx_reg_dump (const struct device *dev) {
     return iqs5xx_write(dev, IQS5XX_REG_DUMP_START_ADDRESS, _iqs5xx_regdump, IQS5XX_REG_DUMP_SIZE);
-}
-
-static int iqs5xx_attr_set(const struct device *dev, enum sensor_channel chan,
-                           enum sensor_attribute attr, const struct sensor_value *val) {
-    LOG_ERR("\nSetting attributes\n");
-    return 0;
 }
 
 /**
@@ -142,53 +121,27 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
     return 0;
 }
 
-static void iqs5xx_thread(void *arg, void *unused2, void *unused3) {
-    const struct device *dev = arg;
-    ARG_UNUSED(unused2);
-    ARG_UNUSED(unused3);
-    struct iqs5xx_data *data = dev->data;
-    const struct iqs5xx_config *conf = dev->config;
+static void iqs5xx_work_cb(struct k_work *work) {
+    struct iqs5xx_data *data = CONTAINER_OF(work, struct iqs5xx_data, work);
 
-    // Initialize device registers
-    struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
+    k_mutex_lock(&data->i2c_mutex, K_MSEC(1000));
+    iqs5xx_sample_fetch(data->dev);
 
-    int err = iqs5xx_registers_init(dev, &iqs5xx_registers);
-    if(err) {
-        LOG_ERR("Failed to initialize IQS5xx registers!\r\n");
+    // Trigger callback if registered
+    if(data->data_ready_handler != NULL) {
+        data->data_ready_handler(data->dev, &data->raw_data);
     }
+    k_mutex_unlock(&data->i2c_mutex);
+}
 
-    int nstate = 0;
-    while (1) {
-        // Sleep for maximum possible time to maximize processor time for other tasks
-        #ifdef CONFIG_IQS5XX_POLL
+/**
+ * @brief Called when data ready pin goes active. Submits work to workqueue.
+ */
+static void iqs5xx_gpio_cb(const struct device *port, struct gpio_callback *cb, uint32_t pins) {
+    struct iqs5xx_data *data = CONTAINER_OF(cb, struct iqs5xx_data, dr_cb);
 
-            k_msleep(4);
-
-            // Poll data ready pin
-            nstate = gpio_pin_get(conf->dr_port, conf->dr_pin);
-
-            if(nstate) {
-                // Fetch the sample
-                iqs5xx_sample_fetch(dev);
-
-                // Trigger
-                if(data->data_ready_handler != NULL) {
-                    data->data_ready_handler(dev, &data->raw_data);
-                }
-            }
-        #elif CONFIG_IQS5XX_INTERRUPT
-            k_sem_take(&data->gpio_sem, K_FOREVER);
-
-            k_mutex_lock(&data->i2c_mutex, K_MSEC(1000));
-            iqs5xx_sample_fetch(dev);
-            // Trigger
-            if(data->data_ready_handler != NULL) {
-                data->data_ready_handler(dev, &data->raw_data);
-            }
-            k_mutex_unlock(&data->i2c_mutex);
-
-        #endif
-    }
+    LOG_DBG("Data ready pin asserted");
+    k_work_submit(&data->work);
 }
 
 /**
@@ -201,32 +154,16 @@ int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handle
 }
 
 /**
- * @brief Called when data ready pin goes active. Releases the semaphore allowing thread to run.
- *
- * @param dev
- * @param cb
- * @param pins
- */
-static void iqs5xx_callback(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
-    struct iqs5xx_data *data = CONTAINER_OF(cb, struct iqs5xx_data, dr_cb);
-    k_sem_give(&data->gpio_sem);
-}
-
-/**
  * @brief Sets registers to initial values
- *
- * @param dev
- * @return >0 if error
  */
 int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_config *config) {
-    // TODO: Retry if error on write
     struct iqs5xx_data *data = dev->data;
     const struct iqs5xx_config *conf = dev->config;
 
     k_mutex_lock(&data->i2c_mutex, K_MSEC(5000));
 
-    // Wait for dataready?
-    while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
+    // Wait for dataready
+    while(!gpio_pin_get_dt(&conf->dr)) {
         k_usleep(200);
     }
 
@@ -236,14 +173,14 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     iqs5xx_write(dev, END_WINDOW, 0, 1);
     k_msleep(10);
 
-    while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
+    while(!gpio_pin_get_dt(&conf->dr)) {
         k_usleep(200);
     }
 
     // Write register dump
     iqs_regdump_err = iqs5xx_reg_dump(dev);
 
-    while(!gpio_pin_get(conf->dr_port, conf->dr_pin)) {
+    while(!gpio_pin_get_dt(&conf->dr)) {
         k_usleep(200);
     }
 
@@ -279,10 +216,8 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
 
     // Set debounce settings
     err |= iqs5xx_write(dev, ProxDb_adr, &config->debounce, 1);
-
     err |= iqs5xx_write(dev, TouchSnapDb_adr, &config->debounce, 1);
 
-    //wbuff[0] = ND_ENABLE;
     wbuff[0] = 0;
     // Set noise reduction
     err |= iqs5xx_write(dev, HardwareSettingsA_adr, wbuff, 1);
@@ -292,9 +227,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
 
     // Set filter settings
     err |= iqs5xx_write(dev, FilterSettings0_adr, &config->filterSettings, 1);
-
     err |= iqs5xx_write(dev, DynamicBottomBeta_adr, &config->filterDynBottomBeta, 1);
-
     err |= iqs5xx_write(dev, DynamicLowerSpeed_adr, &config->filterDynLowerSpeed, 1);
 
     *((uint16_t*)wbuff) = SWPEND16(config->filterDynUpperSpeed);
@@ -317,42 +250,58 @@ static int iqs5xx_init(const struct device *dev) {
     const struct iqs5xx_config *config = dev->config;
 
     data->dev = dev;
+    data->i2c = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(0)));
 
     k_mutex_init(&data->i2c_mutex);
+    k_work_init(&data->work, iqs5xx_work_cb);
 
-    // Configure data ready pin
-    gpio_pin_configure(config->dr_port, config->dr_pin, GPIO_INPUT | config->dr_flags);
-
-    #if CONFIG_IQS5XX_INTERRUPT
-
-    // Blocking semaphore as a flag for sensor read
-    k_sem_init(&data->gpio_sem, 0, UINT_MAX);
+    // Configure data ready pin using devicetree spec
+    int ret = gpio_pin_configure_dt(&config->dr, GPIO_INPUT);
+    if (ret < 0) {
+        LOG_ERR("Failed to configure data ready pin: %d", ret);
+        return ret;
+    }
 
     // Initialize interrupt callback
-    gpio_init_callback(&data->dr_cb, iqs5xx_callback, BIT(config->dr_pin));
+    gpio_init_callback(&data->dr_cb, iqs5xx_gpio_cb, BIT(config->dr.pin));
+
     // Add callback
-    int err = gpio_add_callback(config->dr_port, &data->dr_cb);
+    ret = gpio_add_callback(config->dr.port, &data->dr_cb);
+    if (ret < 0) {
+        LOG_ERR("Failed to add GPIO callback: %d", ret);
+        return ret;
+    }
 
     // Configure data ready interrupt
-    err = gpio_pin_interrupt_configure(config->dr_port, config->dr_pin, GPIO_INT_EDGE_TO_ACTIVE);
-    #endif
+    ret = gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_EDGE_TO_ACTIVE);
+    if (ret < 0) {
+        LOG_ERR("Failed to configure interrupt: %d", ret);
+        return ret;
+    }
 
+    // Initialize device registers
+    struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
+    ret = iqs5xx_registers_init(dev, &iqs5xx_registers);
+    if(ret) {
+        LOG_ERR("Failed to initialize IQS5xx registers: %d", ret);
+        return ret;
+    }
+
+    LOG_INF("IQS5XX initialized successfully");
     return 0;
 }
 
-static struct iqs5xx_data iqs5xx_data = {
-    .i2c = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(0))),
+// Device instance data
+static struct iqs5xx_data iqs5xx_data_0 = {
     .data_ready_handler = NULL
 };
 
-// hard coded data ready pin and port for now.
-static const struct iqs5xx_config iqs5xx_config = {
-    .dr_port = DEVICE_DT_GET(DT_NODELABEL(gpio1)),
-    .dr_pin = 6,
-    .dr_flags = GPIO_ACTIVE_HIGH,
+// Device configuration from devicetree
+static const struct iqs5xx_config iqs5xx_config_0 = {
+    .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
+    .invert_x = DT_INST_PROP(0, invert_x),
+    .invert_y = DT_INST_PROP(0, invert_y),
 };
 
-DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data, &iqs5xx_config,
+DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,
                       POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);
-
-K_THREAD_DEFINE(thread, 1024, iqs5xx_thread, DEVICE_DT_GET(DT_DRV_INST(0)), NULL, NULL, K_PRIO_COOP(10), 0, 0);
