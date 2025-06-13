@@ -145,3 +145,89 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
                 if (data->gestures1 != 0) {
                     LOG_WRN("Unknown gesture1: 0x%02x", data->gestures1);
                 }
+                break;
+        }
+
+        switch(data->gestures0) {
+            case GESTURE_SINGLE_TAP:
+                hasGesture = true;
+                LOG_INF("*** SINGLE TAP -> LEFT CLICK ***");
+                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                break;
+            case GESTURE_TAP_AND_HOLD:
+                LOG_INF("*** TAP AND HOLD -> DRAG START ***");
+                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                isHolding = true;
+                break;
+            default:
+                if (data->gestures0 != 0) {
+                    LOG_WRN("Unknown gesture0: 0x%02x", data->gestures0);
+                }
+                break;
+        }
+    }
+
+    // Movement handling - FIXED AXIS MAPPING
+    if(!hasGesture && data->finger_count == 1) {
+        float sensMp = (float)mouseSensitivity/128.0F;
+
+        // FIXED: Correct axis mapping - don't swap rx/ry
+        accumPos.x += data->rx * sensMp;      // rx maps to X movement
+        accumPos.y += -data->ry * sensMp;     // ry maps to Y movement (inverted)
+
+        int16_t xp = (int16_t)accumPos.x;
+        int16_t yp = (int16_t)accumPos.y;
+
+        // Lower threshold for smoother movement
+        if(fabsf(accumPos.x) >= MOVEMENT_THRESHOLD || fabsf(accumPos.y) >= MOVEMENT_THRESHOLD) {
+            LOG_DBG("Mouse movement: rx=%d,ry=%d -> accum=%.2f,%.2f -> move=%d,%d",
+                    data->rx, data->ry, accumPos.x, accumPos.y, xp, yp);
+
+            // Send movement events
+            send_input_event(INPUT_EV_REL, INPUT_REL_X, xp, false);
+            send_input_event(INPUT_EV_REL, INPUT_REL_Y, yp, true);
+
+            // Reset accumulation
+            accumPos.x -= xp;  // Keep fractional part
+            accumPos.y -= yp;  // Keep fractional part
+        }
+    }
+
+    // Log finger count changes
+    if (lastFingerCount != data->finger_count) {
+        LOG_INF("Finger count changed: %d -> %d", lastFingerCount, data->finger_count);
+        lastFingerCount = data->finger_count;
+    }
+}
+
+static int trackpad_init(void) {
+    LOG_INF("=== TRACKPAD GESTURE HANDLER INIT START ===");
+
+    trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
+    if (trackpad == NULL) {
+        LOG_ERR("Failed to get IQS5XX device");
+        return -EINVAL;
+    }
+    LOG_INF("Found IQS5XX device: %p", trackpad);
+
+    // Store reference for input events
+    trackpad_device = trackpad;
+    LOG_INF("Set trackpad device reference: %p", trackpad_device);
+
+    accumPos.x = 0;
+    accumPos.y = 0;
+    LOG_INF("Reset accumulated position");
+
+    int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
+    if(err) {
+        LOG_ERR("Failed to set trigger handler: %d", err);
+        return -EINVAL;
+    }
+    LOG_INF("Trigger handler set successfully");
+
+    LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
+    return 0;
+}
+
+SYS_INIT(trackpad_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);

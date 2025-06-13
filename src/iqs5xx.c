@@ -420,8 +420,8 @@ static int iqs5xx_init(const struct device *dev) {
         LOG_ERR("Data ready GPIO port is NULL - check devicetree configuration");
         return -ENODEV;
     }
-    LOG_INF("DR GPIO: port=%p, pin=%d, flags=0x%02x",
-            config->dr.port, config->dr.pin, config->dr.flags);
+    LOG_INF("DR GPIO: port=%p, pin=%d, dt_flags=0x%02x",
+            config->dr.port, config->dr.pin, config->dr.dt_flags);
 
     k_mutex_init(&data->i2c_mutex);
     k_work_init(&data->work, iqs5xx_work_cb);
@@ -462,11 +462,11 @@ static int iqs5xx_init(const struct device *dev) {
     // Test I2C communication with a simple read
     LOG_INF("Testing I2C communication...");
     uint8_t test_buf[2];
-    ret = iqs5xx_seq_read(dev, PINNACLE_FW_ID, test_buf, 2);
+    ret = iqs5xx_seq_read(dev, ProductNumber_adr, test_buf, 2);
     if (ret < 0) {
         LOG_WRN("I2C test read failed: %d (this might be normal before init)", ret);
     } else {
-        LOG_INF("I2C test successful - FW ID: 0x%02x, Version: 0x%02x", test_buf[0], test_buf[1]);
+        LOG_INF("I2C test successful - Product ID: 0x%02x%02x", test_buf[0], test_buf[1]);
     }
 
     // Initialize device registers
