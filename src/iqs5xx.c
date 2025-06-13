@@ -296,11 +296,9 @@ static struct iqs5xx_data iqs5xx_data_0 = {
     .data_ready_handler = NULL
 };
 
-// Device configuration from devicetree
+// Device configuration from devicetree - SIMPLIFIED
 static const struct iqs5xx_config iqs5xx_config_0 = {
     .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
-    .invert_x = DT_INST_PROP_OR(0, invert_x, false),
-    .invert_y = DT_INST_PROP_OR(0, invert_y, false),
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,
