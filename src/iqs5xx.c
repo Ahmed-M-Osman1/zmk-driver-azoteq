@@ -416,7 +416,11 @@ static int iqs5xx_init(const struct device *dev) {
     LOG_INF("I2C device: %p", data->i2c);
 
     // Check if GPIO spec is valid
+    LOG_INF("ahmed ::: print config dr: %p", config->dr);
+    LOG_INF("ahmed ::: print config: %p", config);
+
     if (!config->dr.port) {
+        LOG_INF("ahmed 22 ::: print config: %p", config);
         LOG_ERR("Data ready GPIO port is NULL - check devicetree configuration");
         return -ENODEV;
     }
