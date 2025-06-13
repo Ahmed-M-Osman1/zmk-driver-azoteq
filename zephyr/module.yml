@@ -11,4 +11,4 @@ build:
   kconfig: Kconfig
   settings:
     # Folder containing a "dts" folder (. = root)
-    dts_root: ./dts
+    dts_root: .
