@@ -530,7 +530,7 @@ static struct iqs5xx_data iqs5xx_data_0 = {
 // Device configuration from devicetree - TEMPORARY WORKAROUND
 static const struct iqs5xx_config iqs5xx_config_0 = {
     // Try using a standard GPIO property that doesn't need custom binding
-    .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), gpios, {}),
+    .dr = GPIO_DT_SPEC_GET(DT_DRV_INST(0), dr_gpios),
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,
