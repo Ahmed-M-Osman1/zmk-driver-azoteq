@@ -3,39 +3,21 @@
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/devicetree.h>
-#include <math.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include "iqs5xx.h"
+#include "gesture_handlers.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// Tuned defines for better performance:
-#define TRACKPAD_THREE_FINGER_CLICK_TIME    200
-#define SCROLL_REPORT_DISTANCE              15
-#define MOVEMENT_THRESHOLD                  0.5f
-
-// State variables for proper drag handling
-static bool isDragging = false;                // Are we currently in a drag operation?
-static bool dragStartSent = false;             // Have we sent the initial button press?
+// Global state
+static struct gesture_state g_gesture_state = {0};
 static const struct device *trackpad;
-static uint8_t lastFingerCount = 0;
-static int64_t threeFingerPressTime = 0;
-static int16_t lastXScrollReport = 0;
-static bool threeFingersPressed = false;
-static uint8_t mouseSensitivity = 200;
-
-struct {
-    float x;
-    float y;
-} accumPos;
-
-// Reference to the trackpad device which will have the input listener
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 
 // Send events through the trackpad device
-static void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
+void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     event_count++;
     LOG_INF("INPUT EVENT #%d: type=%d, code=%d, value=%d, sync=%d",
             event_count, type, code, value, sync);
@@ -52,9 +34,8 @@ static void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sy
     }
 }
 
-// Your gesture detection logic with FIXED drag handling:
+// Main gesture handler - coordinates all gesture types
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
-    bool hasGesture = false;
     static int trigger_count = 0;
 
     trigger_count++;
@@ -62,7 +43,7 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     LOG_INF("Raw data: fingers=%d, gestures0=0x%02x, gestures1=0x%02x, rx=%d, ry=%d",
             data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
 
-    // Log finger details
+    // Log finger details for debugging
     for (int i = 0; i < data->finger_count && i < 5; i++) {
         if (data->fingers[i].strength > 0) {
             LOG_DBG("Finger %d: pos=(%d,%d), strength=%d, area=%d",
@@ -71,150 +52,56 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         }
     }
 
-    // Three finger detection
-    if(data->finger_count == 3 && !threeFingersPressed) {
-        threeFingerPressTime = k_uptime_get();
-        threeFingersPressed = true;
-        LOG_INF("*** THREE FINGERS DETECTED - START ***");
-    }
+    // Handle gestures based on finger count
+    switch (data->finger_count) {
+        case 0:
+            // Handle finger release - reset all states
+            reset_single_finger_state(&g_gesture_state);
+            reset_two_finger_state(&g_gesture_state);
+            reset_three_finger_state(&g_gesture_state);
+            break;
 
-    // Handle finger release (end of gestures)
-    if(data->finger_count == 0) {
-        if (accumPos.x != 0 || accumPos.y != 0) {
-            LOG_DBG("Resetting accumulated position: was %.2f,%.2f", accumPos.x, accumPos.y);
-        }
-        accumPos.x = 0;
-        accumPos.y = 0;
+        case 1:
+            // Reset multi-finger states
+            reset_two_finger_state(&g_gesture_state);
+            reset_three_finger_state(&g_gesture_state);
 
-        // Handle three finger click
-        if(threeFingersPressed && k_uptime_get() - threeFingerPressTime < TRACKPAD_THREE_FINGER_CLICK_TIME) {
-            hasGesture = true;
-            LOG_INF("*** THREE FINGER CLICK DETECTED ***");
-            // Middle click via input event
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, true);
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
-        }
+            // Handle single finger gestures
+            handle_single_finger_gestures(dev, data, &g_gesture_state);
+            break;
 
-        // Handle end of drag operation
-        if (isDragging && dragStartSent) {
-            LOG_INF("*** DRAG END - RELEASING BUTTON ***");
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
-            isDragging = false;
-            dragStartSent = false;
-        }
+        case 2:
+            // Reset other finger states
+            reset_single_finger_state(&g_gesture_state);
+            reset_three_finger_state(&g_gesture_state);
 
-        if (threeFingersPressed) {
-            threeFingersPressed = false;
-            LOG_INF("*** THREE FINGERS RELEASED ***");
-        }
-    }
+            // Handle two finger gestures
+            handle_two_finger_gestures(dev, data, &g_gesture_state);
+            break;
 
-    // Reset scroll if not two fingers
-    if(data->finger_count != 2) {
-        if (lastXScrollReport != 0) {
-            LOG_DBG("Resetting scroll accumulator: was %d", lastXScrollReport);
-            lastXScrollReport = 0;
-        }
-    }
+        case 3:
+            // Reset other finger states
+            reset_single_finger_state(&g_gesture_state);
+            reset_two_finger_state(&g_gesture_state);
 
-    // FIXED: Gesture handling with proper drag state management
-    if((data->gestures0 || data->gestures1) && !hasGesture) {
-        LOG_INF("Hardware gesture detected: g0=0x%02x, g1=0x%02x", data->gestures0, data->gestures1);
+            // Handle three finger gestures
+            handle_three_finger_gestures(dev, data, &g_gesture_state);
+            break;
 
-        switch(data->gestures1) {
-            case GESTURE_TWO_FINGER_TAP:
-                hasGesture = true;
-                LOG_INF("*** TWO FINGER TAP -> RIGHT CLICK ***");
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
-                break;
-            case GESTURE_SCROLLG:
-                hasGesture = true;
-                lastXScrollReport += data->rx;
-                int8_t pan = -data->ry;
-                int8_t scroll = 0;
-
-                if(abs(lastXScrollReport) - (int16_t)SCROLL_REPORT_DISTANCE > 0) {
-                    scroll = lastXScrollReport >= 0 ? 1 : -1;
-                    lastXScrollReport = 0;
-                }
-
-                LOG_INF("*** SCROLL: pan=%d, scroll=%d (rx=%d, ry=%d) ***", pan, scroll, data->rx, data->ry);
-
-                if (pan != 0) {
-                    send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, pan, false);
-                }
-                if (scroll != 0) {
-                    send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, scroll, true);
-                }
-                break;
-            default:
-                if (data->gestures1 != 0) {
-                    LOG_WRN("Unknown gesture1: 0x%02x", data->gestures1);
-                }
-                break;
-        }
-
-        switch(data->gestures0) {
-            case GESTURE_SINGLE_TAP:
-                // Only handle single tap if we're not already dragging
-                if (!isDragging) {
-                    hasGesture = true;
-                    LOG_INF("*** SINGLE TAP -> LEFT CLICK ***");
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
-                }
-                break;
-            case GESTURE_TAP_AND_HOLD:
-                // FIXED: Only send the button press ONCE when drag starts
-                if (!isDragging) {
-                    LOG_INF("*** TAP AND HOLD -> DRAG START ***");
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                    isDragging = true;
-                    dragStartSent = true;
-                } else {
-                    // We're already dragging, don't send more button presses
-                    LOG_DBG("Already dragging, ignoring repeated tap-and-hold gesture");
-                }
-                break;
-            default:
-                if (data->gestures0 != 0) {
-                    LOG_WRN("Unknown gesture0: 0x%02x", data->gestures0);
-                }
-                break;
-        }
-    }
-
-    // Movement handling - works during normal movement AND during drag
-    if(!hasGesture && data->finger_count == 1) {
-        float sensMp = (float)mouseSensitivity/128.0F;
-
-        // FIXED: Correct axis mapping - don't swap rx/ry
-        accumPos.x += data->rx * sensMp;      // rx maps to X movement
-        accumPos.y += data->ry * sensMp;     // ry maps to Y movement (inverted)
-
-        int16_t xp = (int16_t)accumPos.x;
-        int16_t yp = (int16_t)accumPos.y;
-
-        // Lower threshold for smoother movement
-        if(fabsf(accumPos.x) >= MOVEMENT_THRESHOLD || fabsf(accumPos.y) >= MOVEMENT_THRESHOLD) {
-            LOG_DBG("Mouse movement: rx=%d,ry=%d -> accum=%.2f,%.2f -> move=%d,%d",
-                    data->rx, data->ry, accumPos.x, accumPos.y, xp, yp);
-
-            // Send movement events (works both for normal movement and drag)
-            send_input_event(INPUT_EV_REL, INPUT_REL_X, xp, false);
-            send_input_event(INPUT_EV_REL, INPUT_REL_Y, yp, true);
-
-            // Reset accumulation
-            accumPos.x -= xp;  // Keep fractional part
-            accumPos.y -= yp;  // Keep fractional part
-        }
+        default:
+            // 4+ fingers - reset all states
+            LOG_DBG("4+ fingers detected (%d), resetting all states", data->finger_count);
+            reset_single_finger_state(&g_gesture_state);
+            reset_two_finger_state(&g_gesture_state);
+            reset_three_finger_state(&g_gesture_state);
+            break;
     }
 
     // Log finger count changes
-    if (lastFingerCount != data->finger_count) {
-        LOG_INF("Finger count changed: %d -> %d", lastFingerCount, data->finger_count);
-        lastFingerCount = data->finger_count;
+    if (g_gesture_state.lastFingerCount != data->finger_count) {
+        LOG_INF("Finger count changed: %d -> %d",
+                g_gesture_state.lastFingerCount, data->finger_count);
+        g_gesture_state.lastFingerCount = data->finger_count;
     }
 }
 
@@ -232,12 +119,11 @@ static int trackpad_init(void) {
     trackpad_device = trackpad;
     LOG_INF("Set trackpad device reference: %p", trackpad_device);
 
-    // Initialize state
-    accumPos.x = 0;
-    accumPos.y = 0;
-    isDragging = false;
-    dragStartSent = false;
-    LOG_INF("Reset accumulated position and drag state");
+    // Initialize global gesture state
+    memset(&g_gesture_state, 0, sizeof(g_gesture_state));
+    g_gesture_state.mouseSensitivity = 200;  // Default sensitivity
+    LOG_INF("Initialized gesture state with mouse sensitivity: %d",
+            g_gesture_state.mouseSensitivity);
 
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
     if(err) {
@@ -247,6 +133,11 @@ static int trackpad_init(void) {
     LOG_INF("Trigger handler set successfully");
 
     LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
+    LOG_INF("Supported gestures:");
+    LOG_INF("  1 finger: tap (left click), tap-hold (drag), movement");
+    LOG_INF("  2 finger: tap (right click), scroll, zoom in/out");
+    LOG_INF("  3 finger: tap (middle click), swipe up (F3), swipe down (F4)");
+
     return 0;
 }
 
