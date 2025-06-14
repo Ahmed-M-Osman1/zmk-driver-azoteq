@@ -1,6 +1,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
-#include <zephyr:kernel.h>
+#include <zephyr/kernel.h>
+#include <math.h>
 #include "gesture_handlers.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
