@@ -14,8 +14,15 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/input/input.h>
+#include <zephyr/sys/atomic.h>
+#include <zephyr/kernel.h>
 
 // Hardware configuration
+#define IQS5XX_DEFAULT_SENSITIVITY     128
+#define IQS5XX_DEFAULT_REFRESH_ACTIVE  5
+#define IQS5XX_DEFAULT_REFRESH_IDLE    20
+
+
 #define AZOTEQ_IQS5XX_ADDR          0x74
 #define IQS5XX_GESTURE_EVENTS0      0x000D
 #define IQS5XX_END_WINDOW           0xEEEE
@@ -152,3 +159,10 @@ static inline uint32_t calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2,
     int32_t dy = y2 - y1;
     return dx * dx + dy * dy; // Square distance (avoid sqrt for performance)
 }
+
+int iqs5xx_device_setup(const struct device *dev);
+int iqs5xx_enable_interrupts(const struct device *dev, bool enable);
+void iqs5xx_debounce_timer_handler(struct k_timer *timer);
+void iqs5xx_work_handler(struct k_work *work);
+void iqs5xx_gpio_interrupt_handler(const struct device *port, struct gpio_callback *cb, uint32_t pins);
+static void parse_gesture_data(const uint8_t *raw_buffer, struct iqs5xx_rawdata *data);
