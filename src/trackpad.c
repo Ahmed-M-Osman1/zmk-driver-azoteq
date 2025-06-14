@@ -10,11 +10,14 @@
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// Global state
+// Function declarations
+static void handle_i2c_error(const struct device *dev);
 static struct gesture_state g_gesture_state = {0};
 static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
+static int consecutive_i2c_errors = 0;
+static int64_t last_error_time = 0;
 
 // Send events through the trackpad device
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
@@ -37,6 +40,9 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
 // Main gesture handler - coordinates all gesture types
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
+
+    // Reset error counter on successful data
+    consecutive_i2c_errors = 0;
 
     trigger_count++;
     LOG_DBG("=== TRIGGER #%d ===", trigger_count);
@@ -107,6 +113,49 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         LOG_INF("Finger count changed: %d -> %d",
                 g_gesture_state.lastFingerCount, data->finger_count);
         g_gesture_state.lastFingerCount = data->finger_count;
+    }
+}
+
+// Error handler for I2C failures
+static void handle_i2c_error(const struct device *dev) {
+    consecutive_i2c_errors++;
+    int64_t current_time = k_uptime_get();
+
+    LOG_ERR("I2C error #%d", consecutive_i2c_errors);
+
+    // If we have too many consecutive errors, try to recover
+    if (consecutive_i2c_errors >= 10) {
+        LOG_ERR("Too many I2C errors (%d), attempting recovery", consecutive_i2c_errors);
+
+        // Reset error counter to prevent infinite loop
+        consecutive_i2c_errors = 0;
+        last_error_time = current_time;
+
+        // Try to reset the device state
+        memset(&g_gesture_state, 0, sizeof(g_gesture_state));
+        g_gesture_state.mouseSensitivity = 200;
+
+        // Disable interrupts temporarily
+        const struct iqs5xx_config *config = dev->config;
+        gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_DISABLE);
+
+        // Wait a bit
+        k_msleep(100);
+
+        // Re-enable interrupts
+        gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_EDGE_TO_ACTIVE);
+
+        LOG_INF("Recovery attempt completed");
+    }
+
+    // If errors persist for too long, disable temporarily
+    if (current_time - last_error_time > 5000 && consecutive_i2c_errors > 0) {
+        LOG_WRN("Disabling interrupts for 1 second due to persistent errors");
+        const struct iqs5xx_config *config = dev->config;
+        gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_DISABLE);
+        k_msleep(1000);
+        gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_EDGE_TO_ACTIVE);
+        consecutive_i2c_errors = 0;
     }
 }
 

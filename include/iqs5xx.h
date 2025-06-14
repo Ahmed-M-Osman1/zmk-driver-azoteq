@@ -65,6 +65,9 @@ struct iqs5xx_data {
     struct k_mutex i2c_mutex;
     // Work queue item for handling interrupts
     struct k_work work;
+    // Error tracking
+    int consecutive_errors;
+    int64_t last_error_time;
 };
 
 struct iqs5xx_config {
@@ -291,48 +294,6 @@ int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handle
 
 /******************** DEVICE INFO REGISTERS ***************************/
 #define ProductNumber_adr		0x0000	//(READ)			//2 BYTES;
-#define ProjectNumber_adr		0x0002	//(READ)			//2 BYTES;
-#define MajorVersion_adr		0x0004	//(READ)
-#define MinorVersion_adr		0x0005	//(READ)
-#define BLStatus_adr			0x0006	//(READ)
-/******************** ************************* ***************************/
-#define MaxTouch_adr			0x000B	//(READ)
-#define PrevCycleTime_adr		0x000C	//(READ)
-/******************** GESTURES AND EVENT STATUS REGISTERS ***************************/
-#define GestureEvents0_adr		0x000D	//(READ)
-#define GestureEvents1_adr		0x000E	//(READ)
-#define SystemInfo0_adr			0x000F	//(READ)
-#define SystemInfo1_adr			0x0010	//(READ)
-/******************** XY DATA REGISTERS ***************************/
-#define NoOfFingers_adr			0x0011	//(READ)
-#define RelativeX_adr			0x0012	//(READ)			//2 BYTES;
-#define RelativeY_adr			0x0014	//(READ)		   	//2 BYTES;
-/******************** INDIVIDUAL FINGER DATA ***************************/
-#define AbsoluteX_adr			0x0016	//(READ) 2 BYTES	//ADD 0x0007 FOR FINGER 2; 0x000E FOR FINGER 3; 0x0015 FOR FINGER 4 AND 0x001C FOR FINGER 5
-#define AbsoluteY_adr			0x0018	//(READ) 2 BYTES	//ADD 0x0007 FOR FINGER 2; 0x000E FOR FINGER 3; 0x0015 FOR FINGER 4 AND 0x001C FOR FINGER 5
-#define TouchStrength_adr		0x001A	//(READ) 2 BYTES	//ADD 0x0007 FOR FINGER 2; 0x000E FOR FINGER 3; 0x0015 FOR FINGER 4 AND 0x001C FOR FINGER 5
-#define Area_adr				0x001C	//(READ)			//ADD 0x0007 FOR FINGER 2; 0x000E FOR FINGER 3; 0x0015 FOR FINGER 4 AND 0x001C FOR FINGER 5
-/******************** CHANNEL STATUS REGISTERS ***************************/
-#define ProxStatus_adr			0x0039	//(READ)	  		//32 BYTES;
-#define TouchStatus_adr			0x0059	//(READ)	 	    //30 BYTES;
-#define SnapStatus_adr			0x0077	//(READ)		    //30 BYTES;
-/******************** DATA STREAMING REGISTERS ***************************/
-#define Counts_adr				0x0095	//(READ)	  		//300 BYTES;
-#define Delta_adr				0x01C1	//(READ)	 		//300 BYTES;
-#define ALPCount_adr			0x02ED	//(READ)	 		//2 BYTES;
-#define ALPIndivCounts_adr		0x02EF	//(READ)	 		//20 BYTES;
-#define References_adr			0x0303	//(READ/WRITE)		//300 BYTES;
-#define ALPLTA_adr 				0x042F	//(READ/WRITE)		//2 BYTES;
-/******************** SYSTEM CONTROL REGISTERS ***************************/
-#define SystemControl0_adr 		0x0431	//(READ/WRITE)
-#define SystemControl1_adr 		0x0432	//(READ/WRITE)
-/******************** ATI SETTINGS REGISTERS ***************************/
-#define ALPATIComp_adr 			0x0435	//(READ/WRITE)  	//10 BYTES;
-#define	ATICompensation_adr		0x043F	//(READ/WRITE)  	//150 BYTES;
-#define ATICAdjust_adr         	0x04D5	//(READ/WRITE/E2)	//150 BYTES;
-#define GlobalATIC_adr         	0x056B	//(READ/WRITE/E2)
-#define ALPATIC_adr				0x056C	//(READ/WRITE/E2)
-#define ATITarget_adr			0x056D	//(READ/WRITE/E2)	//2 BYTES;
 #define ALPATITarget_adr		0x056F	//(READ/WRITE/E2)	//2 BYTES;
 #define RefDriftLimit_adr		0x0571	//(READ/WRITE/E2)
 #define ALPLTADriftLimit_adr	0x0572	//(READ/WRITE/E2)
@@ -431,3 +392,45 @@ int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handle
 #define IQS5XX_REG_DUMP_SIZE            504
 // Dump data
 extern const unsigned char _iqs5xx_regdump[IQS5XX_REG_DUMP_SIZE];
+#define ProjectNumber_adr		0x0002	//(READ)			//2 BYTES;
+#define MajorVersion_adr		0x0004	//(READ)
+#define MinorVersion_adr		0x0005	//(READ)
+#define BLStatus_adr			0x0006	//(READ)
+/******************** ************************* ***************************/
+#define MaxTouch_adr			0x000B	//(READ)
+#define PrevCycleTime_adr		0x000C	//(READ)
+/******************** GESTURES AND EVENT STATUS REGISTERS ***************************/
+#define GestureEvents0_adr		0x000D	//(READ)
+#define GestureEvents1_adr		0x000E	//(READ)
+#define SystemInfo0_adr			0x000F	//(READ)
+#define SystemInfo1_adr			0x0010	//(READ)
+/******************** XY DATA REGISTERS ***************************/
+#define NoOfFingers_adr			0x0011	//(READ)
+#define RelativeX_adr			0x0012	//(READ)			//2 BYTES;
+#define RelativeY_adr			0x0014	//(READ)		   	//2 BYTES;
+/******************** INDIVIDUAL FINGER DATA ***************************/
+#define AbsoluteX_adr			0x0016	//(READ) 2 BYTES	//ADD 0x0007 FOR FINGER 2; 0x000E FOR FINGER 3; 0x0015 FOR FINGER 4 AND 0x001C FOR FINGER 5
+#define AbsoluteY_adr			0x0018	//(READ) 2 BYTES	//ADD 0x0007 FOR FINGER 2; 0x000E FOR FINGER 3; 0x0015 FOR FINGER 4 AND 0x001C FOR FINGER 5
+#define TouchStrength_adr		0x001A	//(READ) 2 BYTES	//ADD 0x0007 FOR FINGER 2; 0x000E FOR FINGER 3; 0x0015 FOR FINGER 4 AND 0x001C FOR FINGER 5
+#define Area_adr				0x001C	//(READ)			//ADD 0x0007 FOR FINGER 2; 0x000E FOR FINGER 3; 0x0015 FOR FINGER 4 AND 0x001C FOR FINGER 5
+/******************** CHANNEL STATUS REGISTERS ***************************/
+#define ProxStatus_adr			0x0039	//(READ)	  		//32 BYTES;
+#define TouchStatus_adr			0x0059	//(READ)	 	    //30 BYTES;
+#define SnapStatus_adr			0x0077	//(READ)		    //30 BYTES;
+/******************** DATA STREAMING REGISTERS ***************************/
+#define Counts_adr				0x0095	//(READ)	  		//300 BYTES;
+#define Delta_adr				0x01C1	//(READ)	 		//300 BYTES;
+#define ALPCount_adr			0x02ED	//(READ)	 		//2 BYTES;
+#define ALPIndivCounts_adr		0x02EF	//(READ)	 		//20 BYTES;
+#define References_adr			0x0303	//(READ/WRITE)		//300 BYTES;
+#define ALPLTA_adr 				0x042F	//(READ/WRITE)		//2 BYTES;
+/******************** SYSTEM CONTROL REGISTERS ***************************/
+#define SystemControl0_adr 		0x0431	//(READ/WRITE)
+#define SystemControl1_adr 		0x0432	//(READ/WRITE)
+/******************** ATI SETTINGS REGISTERS ***************************/
+#define ALPATIComp_adr 			0x0435	//(READ/WRITE)  	//10 BYTES;
+#define	ATICompensation_adr		0x043F	//(READ/WRITE)  	//150 BYTES;
+#define ATICAdjust_adr         	0x04D5	//(READ/WRITE/E2)	//150 BYTES;
+#define GlobalATIC_adr         	0x056B	//(READ/WRITE/E2)
+#define ALPATIC_adr				0x056C	//(READ/WRITE/E2)
+#define ATITarget_adr			0x056D	//(READ/WRITE/E2)	//2 BYTES;

@@ -255,13 +255,72 @@ static void iqs5xx_work_cb(struct k_work *work) {
     k_mutex_lock(&data->i2c_mutex, K_MSEC(1000));
     int ret = iqs5xx_sample_fetch(data->dev);
 
-    if (ret == 0 && data->data_ready_handler != NULL) {
-        LOG_DBG("Calling data ready handler");
-        data->data_ready_handler(data->dev, &data->raw_data);
-    } else if (ret != 0) {
-        LOG_ERR("Sample fetch failed in work callback: %d", ret);
+    if (ret == 0) {
+        // Success - reset error counter
+        data->consecutive_errors = 0;
+
+        if (data->data_ready_handler != NULL) {
+            LOG_DBG("Calling data ready handler");
+            data->data_ready_handler(data->dev, &data->raw_data);
+        } else {
+            LOG_WRN("No data ready handler registered");
+        }
     } else {
-        LOG_WRN("No data ready handler registered");
+        // I2C Error handling
+        data->consecutive_errors++;
+        int64_t current_time = k_uptime_get();
+
+        LOG_ERR("Sample fetch failed in work callback: %d (error #%d)", ret, data->consecutive_errors);
+
+        // If we have too many consecutive errors, try recovery
+        if (data->consecutive_errors >= 15) {
+            LOG_ERR("Too many consecutive I2C errors (%d), attempting recovery", data->consecutive_errors);
+
+            // Reset error counter
+            data->consecutive_errors = 0;
+            data->last_error_time = current_time;
+
+            k_mutex_unlock(&data->i2c_mutex);
+
+            // Get config for GPIO access
+            const struct iqs5xx_config *config = data->dev->config;
+
+            // Disable interrupts temporarily
+            gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_DISABLE);
+
+            // Wait for device to settle
+            k_msleep(200);
+
+            // Try a simple reset by writing to system control
+            uint8_t reset_cmd = RESET_TP;
+            iqs5xx_write(data->dev, SystemControl1_adr, &reset_cmd, 1);
+            iqs5xx_write(data->dev, END_WINDOW, 0, 1);
+
+            // Wait after reset
+            k_msleep(100);
+
+            // Re-enable interrupts
+            gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_EDGE_TO_ACTIVE);
+
+            LOG_INF("I2C recovery attempt completed");
+            return;
+        }
+
+        // If errors persist for too long, disable temporarily
+        if ((current_time - data->last_error_time > 3000) && (data->consecutive_errors > 5)) {
+            LOG_WRN("Disabling interrupts temporarily due to persistent I2C errors");
+
+            const struct iqs5xx_config *config = data->dev->config;
+            gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_DISABLE);
+
+            k_mutex_unlock(&data->i2c_mutex);
+            k_msleep(500);
+            k_mutex_lock(&data->i2c_mutex, K_MSEC(1000));
+
+            gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_EDGE_TO_ACTIVE);
+            data->consecutive_errors = 0;
+            data->last_error_time = current_time;
+        }
     }
 
     k_mutex_unlock(&data->i2c_mutex);
