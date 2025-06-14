@@ -1,39 +1,33 @@
-# Copyright (c) 2022 The ZMK Contributors
-# SPDX-License-Identifier: MIT
-
 menuconfig IQS5XX
     bool "IQS5XX Trackpad IC"
+    default y
     depends on GPIO
     depends on I2C
-    depends on ZMK_POINTING  # support ZMK pointing device
     help
-      Enable driver for IQS5XX based-trackpads
+      Enable driver for IQS5XX based-trackpads with enhanced performance
+      and gesture recognition capabilities.
 
 if IQS5XX
 
-config IQS5XX_THREAD_PRIORITY
-    int "Thread priority"
-    depends on IQS5XX_TRIGGER_OWN_THREAD
-    default 100
+config IQS5XX_GESTURE_PROCESSING
+    bool "Enable advanced gesture processing"
+    default y
     help
-      Priority of thread used by the driver to handle interrupts.
+      Enable advanced gesture recognition including multi-finger gestures,
+      swipe detection, and customizable gesture responses.
 
-config IQS5XX_THREAD_STACK_SIZE
-    int "Thread stack size"
-    depends on IQS5XX_TRIGGER_OWN_THREAD
-    default 1024
+config IQS5XX_PERFORMANCE_OPTIMIZATION
+    bool "Enable performance optimizations"
+    default y
     help
-      Stack size of thread used by the driver to handle interrupts.
+      Enable performance optimizations including I2C caching,
+      movement smoothing, and interrupt-driven processing.
 
-choice
-    prompt "Interrupt or poll trackpad ready pin"
-
-config IQS5XX_POLL
-    bool "Poll data-ready pin"
-
-config IQS5XX_INTERRUPT
-    bool "Interrupt from data-ready pin"
-
-endchoice
+config IQS5XX_DEBUG_STATS
+    bool "Enable debug statistics"
+    default n
+    help
+      Enable collection of performance and debugging statistics.
+      Disable in production builds for optimal performance.
 
 endif # IQS5XX
