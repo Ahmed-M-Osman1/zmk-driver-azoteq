@@ -15,5 +15,4 @@ if(CONFIG_IQS5XX)
       src/three_finger.c
       src/debug_helpers.c
     )
-    zephyr_library_link_libraries(zmk)
 endif()

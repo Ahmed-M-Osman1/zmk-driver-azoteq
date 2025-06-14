@@ -1,9 +1,6 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <zmk/hid.h>
-#include <zmk/endpoints.h>
-#include <zmk/keys.h>
 #include <math.h>
 #include <stdlib.h>
 #include "gesture_handlers.h"
@@ -83,7 +80,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
-    // Manual zoom detection - now uses ZMK keyboard shortcuts
+    // Manual zoom detection - now uses keyboard shortcuts
     if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0 &&
         data->rx == 0 && data->ry == 0) { // Only check zoom when no relative movement
 
@@ -116,17 +113,11 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
                 if (zoom_steps > 0) {
                     // Zoom IN - Send Ctrl+Plus
                     LOG_INF("ZOOM IN - SENDING CTRL+=");
-                    send_zmk_key_combo(
-                        HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL),
-                        HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS)
-                    );
+                    send_keyboard_combo(KEY_LEFTCTRL, KEY_EQUAL);
                 } else {
                     // Zoom OUT - Send Ctrl+Minus
                     LOG_INF("ZOOM OUT - SENDING CTRL+-");
-                    send_zmk_key_combo(
-                        HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL),
-                        HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE)
-                    );
+                    send_keyboard_combo(KEY_LEFTCTRL, KEY_MINUS);
                 }
 
                 // Update start positions to prevent continuous zoom

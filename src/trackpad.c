@@ -5,9 +5,6 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <zmk/hid.h>
-#include <zmk/endpoints.h>
-#include <zmk/keys.h>
 #include "iqs5xx.h"
 #include "gesture_handlers.h"
 
@@ -22,45 +19,79 @@ static int event_count = 0;
 static int consecutive_i2c_errors = 0;
 static int64_t last_error_time = 0;
 
-// NEW: Send ZMK keyboard events - THE CORRECT WAY
-void send_zmk_key_press(uint32_t keycode) {
+// NEW: Send keyboard events using input system
+// This approach sends keyboard events through the input system
+// which should work better for external modules
+void send_keyboard_key(uint16_t keycode) {
     event_count++;
-    LOG_INF("ZMK KEY EVENT #%d: keycode=0x%08x", event_count, keycode);
+    LOG_INF("KEYBOARD EVENT #%d: keycode=%d", event_count, keycode);
 
-    // Press the key
-    zmk_hid_keyboard_press(keycode);
-    zmk_endpoints_send_keyboard_report();
+    if (trackpad_device) {
+        // Send key press
+        int ret = input_report(trackpad_device, INPUT_EV_KEY, keycode, 1, false, K_NO_WAIT);
+        if (ret < 0) {
+            LOG_ERR("Failed to send key press: %d", ret);
+            return;
+        }
 
-    // Small delay
-    k_msleep(10);
+        // Send sync
+        ret = input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
+        if (ret < 0) {
+            LOG_ERR("Failed to send sync after key press: %d", ret);
+            return;
+        }
 
-    // Release the key
-    zmk_hid_keyboard_release(keycode);
-    zmk_endpoints_send_keyboard_report();
+        // Small delay
+        k_msleep(10);
+
+        // Send key release
+        ret = input_report(trackpad_device, INPUT_EV_KEY, keycode, 0, false, K_NO_WAIT);
+        if (ret < 0) {
+            LOG_ERR("Failed to send key release: %d", ret);
+            return;
+        }
+
+        // Send sync
+        ret = input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
+        if (ret < 0) {
+            LOG_ERR("Failed to send sync after key release: %d", ret);
+            return;
+        }
+
+        LOG_DBG("Keyboard event sent successfully");
+    } else {
+        LOG_ERR("Trackpad device is NULL - cannot send keyboard events");
+    }
 }
 
-void send_zmk_key_combo(uint32_t modifier, uint32_t keycode) {
+void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     event_count++;
-    LOG_INF("ZMK COMBO EVENT #%d: modifier=0x%08x + key=0x%08x", event_count, modifier, keycode);
+    LOG_INF("KEYBOARD COMBO #%d: modifier=%d + key=%d", event_count, modifier, keycode);
 
-    // Press modifier
-    zmk_hid_keyboard_press(modifier);
-    zmk_endpoints_send_keyboard_report();
-    k_msleep(10);
+    if (trackpad_device) {
+        // Press modifier
+        input_report(trackpad_device, INPUT_EV_KEY, modifier, 1, false, K_NO_WAIT);
+        input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
+        k_msleep(10);
 
-    // Press main key
-    zmk_hid_keyboard_press(keycode);
-    zmk_endpoints_send_keyboard_report();
-    k_msleep(10);
+        // Press main key
+        input_report(trackpad_device, INPUT_EV_KEY, keycode, 1, false, K_NO_WAIT);
+        input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
+        k_msleep(10);
 
-    // Release main key
-    zmk_hid_keyboard_release(keycode);
-    zmk_endpoints_send_keyboard_report();
-    k_msleep(10);
+        // Release main key
+        input_report(trackpad_device, INPUT_EV_KEY, keycode, 0, false, K_NO_WAIT);
+        input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
+        k_msleep(10);
 
-    // Release modifier
-    zmk_hid_keyboard_release(modifier);
-    zmk_endpoints_send_keyboard_report();
+        // Release modifier
+        input_report(trackpad_device, INPUT_EV_KEY, modifier, 0, false, K_NO_WAIT);
+        input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
+
+        LOG_DBG("Keyboard combo sent successfully");
+    } else {
+        LOG_ERR("Trackpad device is NULL - cannot send keyboard combo");
+    }
 }
 
 // Keep existing send_input_event for mouse events

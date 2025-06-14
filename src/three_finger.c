@@ -1,9 +1,6 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <zmk/hid.h>
-#include <zmk/endpoints.h>
-#include <zmk/keys.h>
 #include <math.h>
 #include "gesture_handlers.h"
 
@@ -71,8 +68,8 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE UP -> F3 KEY ***");
 
-            // Send F3 key using ZMK HID API
-            send_zmk_key_press(HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F3));
+            // Send F3 key using input system
+            send_keyboard_key(KEY_F3);
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;
@@ -84,8 +81,8 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY ***");
 
-            // Send F4 key using ZMK HID API
-            send_zmk_key_press(HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F4));
+            // Send F4 key using input system
+            send_keyboard_key(KEY_F4);
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;
