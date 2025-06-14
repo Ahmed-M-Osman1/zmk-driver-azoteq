@@ -4,6 +4,9 @@
 #include <zephyr/kernel.h>
 #include <math.h>
 #include <string.h>
+#include <zmk/hid.h>
+#include <zmk/endpoints.h>
+#include <zmk/keys.h>
 #include "iqs5xx.h"
 
 // Common gesture state and configuration
@@ -62,8 +65,12 @@ void reset_two_finger_state(struct gesture_state *state);
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state);
 void reset_three_finger_state(struct gesture_state *state);
 
-// Input event helper (defined in trackpad.c)
+// Input event helper (defined in trackpad.c) - for mouse events
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync);
+
+// NEW: ZMK keyboard event helpers (defined in trackpad.c)
+void send_zmk_key_press(uint32_t keycode);
+void send_zmk_key_combo(uint32_t modifier, uint32_t keycode);
 
 // Debug helpers (defined in debug_helpers.c)
 void debug_two_finger_positions(const struct iqs5xx_rawdata *data, struct gesture_state *state);

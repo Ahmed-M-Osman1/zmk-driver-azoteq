@@ -1,6 +1,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zmk/hid.h>
+#include <zmk/endpoints.h>
+#include <zmk/keys.h>
 #include <math.h>
 #include <stdlib.h>
 #include "gesture_handlers.h"
@@ -80,7 +83,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
-    // Manual zoom detection - only when no other gestures are active
+    // Manual zoom detection - now uses ZMK keyboard shortcuts
     if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0 &&
         data->rx == 0 && data->ry == 0) { // Only check zoom when no relative movement
 
@@ -110,17 +113,20 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
                 LOG_INF("*** ZOOM: distance_change=%d, steps=%d ***",
                         (int)distanceChange, zoom_steps);
 
-                // Simple test - just send + and - keys
                 if (zoom_steps > 0) {
-                    // Zoom IN - Send = key (+ key)
-                    LOG_INF("ZOOM IN - SENDING = KEY");
-                    send_input_event(INPUT_EV_KEY, 13, 1, false); // = key
-                    send_input_event(INPUT_EV_KEY, 13, 0, true);
+                    // Zoom IN - Send Ctrl+Plus
+                    LOG_INF("ZOOM IN - SENDING CTRL+=");
+                    send_zmk_key_combo(
+                        HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL),
+                        HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS)
+                    );
                 } else {
-                    // Zoom OUT - Send - key
-                    LOG_INF("ZOOM OUT - SENDING - KEY");
-                    send_input_event(INPUT_EV_KEY, 12, 1, false); // - key
-                    send_input_event(INPUT_EV_KEY, 12, 0, true);
+                    // Zoom OUT - Send Ctrl+Minus
+                    LOG_INF("ZOOM OUT - SENDING CTRL+-");
+                    send_zmk_key_combo(
+                        HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL),
+                        HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE)
+                    );
                 }
 
                 // Update start positions to prevent continuous zoom

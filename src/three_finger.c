@@ -1,6 +1,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zmk/hid.h>
+#include <zmk/endpoints.h>
+#include <zmk/keys.h>
 #include <math.h>
 #include "gesture_handlers.h"
 
@@ -66,11 +69,10 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
         // Detect significant upward movement (swipe up)
         if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
-            LOG_INF("*** THREE FINGER SWIPE UP -> A KEY TEST ***");
+            LOG_INF("*** THREE FINGER SWIPE UP -> F3 KEY ***");
 
-            // Send A key as test (code 30)
-            send_input_event(INPUT_EV_KEY, 30, 1, false);
-            send_input_event(INPUT_EV_KEY, 30, 0, true);
+            // Send F3 key using ZMK HID API
+            send_zmk_key_press(HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F3));
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;
@@ -80,11 +82,10 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
         // Detect significant downward movement (swipe down)
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
-            LOG_INF("*** THREE FINGER SWIPE DOWN -> B KEY TEST ***");
+            LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY ***");
 
-            // Send B key as test (code 48)
-            send_input_event(INPUT_EV_KEY, 48, 1, false);
-            send_input_event(INPUT_EV_KEY, 48, 0, true);
+            // Send F4 key using ZMK HID API
+            send_zmk_key_press(HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F4));
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;
@@ -99,7 +100,7 @@ void reset_three_finger_state(struct gesture_state *state) {
     if (state->threeFingersPressed &&
         k_uptime_get() - state->threeFingerPressTime < TRACKPAD_THREE_FINGER_CLICK_TIME) {
         LOG_INF("*** THREE FINGER CLICK -> MIDDLE CLICK ***");
-        // Middle click via input event
+        // Middle click via input event (mouse events still use input system)
         send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
         send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
     }

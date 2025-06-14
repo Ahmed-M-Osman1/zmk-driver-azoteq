@@ -5,6 +5,9 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zmk/hid.h>
+#include <zmk/endpoints.h>
+#include <zmk/keys.h>
 #include "iqs5xx.h"
 #include "gesture_handlers.h"
 
@@ -19,7 +22,48 @@ static int event_count = 0;
 static int consecutive_i2c_errors = 0;
 static int64_t last_error_time = 0;
 
-// Send events through the trackpad device
+// NEW: Send ZMK keyboard events - THE CORRECT WAY
+void send_zmk_key_press(uint32_t keycode) {
+    event_count++;
+    LOG_INF("ZMK KEY EVENT #%d: keycode=0x%08x", event_count, keycode);
+
+    // Press the key
+    zmk_hid_keyboard_press(keycode);
+    zmk_endpoints_send_keyboard_report();
+
+    // Small delay
+    k_msleep(10);
+
+    // Release the key
+    zmk_hid_keyboard_release(keycode);
+    zmk_endpoints_send_keyboard_report();
+}
+
+void send_zmk_key_combo(uint32_t modifier, uint32_t keycode) {
+    event_count++;
+    LOG_INF("ZMK COMBO EVENT #%d: modifier=0x%08x + key=0x%08x", event_count, modifier, keycode);
+
+    // Press modifier
+    zmk_hid_keyboard_press(modifier);
+    zmk_endpoints_send_keyboard_report();
+    k_msleep(10);
+
+    // Press main key
+    zmk_hid_keyboard_press(keycode);
+    zmk_endpoints_send_keyboard_report();
+    k_msleep(10);
+
+    // Release main key
+    zmk_hid_keyboard_release(keycode);
+    zmk_endpoints_send_keyboard_report();
+    k_msleep(10);
+
+    // Release modifier
+    zmk_hid_keyboard_release(modifier);
+    zmk_endpoints_send_keyboard_report();
+}
+
+// Keep existing send_input_event for mouse events
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     event_count++;
     LOG_INF("INPUT EVENT #%d: type=%d, code=%d, value=%d, sync=%d",
@@ -189,7 +233,7 @@ static int trackpad_init(void) {
     LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
     LOG_INF("Supported gestures:");
     LOG_INF("  1 finger: tap (left click), tap-hold (drag), movement");
-    LOG_INF("  2 finger: tap (right click), scroll, zoom in/out");
+    LOG_INF("  2 finger: tap (right click), scroll, zoom (Ctrl+/-)");//
     LOG_INF("  3 finger: tap (middle click), swipe up (F3), swipe down (F4)");
 
     return 0;
