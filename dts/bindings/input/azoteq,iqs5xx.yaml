@@ -1,4 +1,4 @@
-description: |
+description: | 
   Sensor driver for the Azoteq IQS5XX trackpad IC
 compatible: "azoteq,iqs5xx"
 
