@@ -68,8 +68,8 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE UP -> F3 KEY ***");
 
-            // Send F3 key using input system
-            send_keyboard_key(KEY_F3);
+            // Send F3 key using input system (use correct constant name)
+            send_keyboard_key(INPUT_KEY_F3);
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;
@@ -81,8 +81,8 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY ***");
 
-            // Send F4 key using input system
-            send_keyboard_key(KEY_F4);
+            // Send F4 key using input system (use correct constant name)
+            send_keyboard_key(INPUT_KEY_F4);
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;

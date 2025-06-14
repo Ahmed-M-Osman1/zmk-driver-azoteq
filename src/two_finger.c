@@ -80,7 +80,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
-    // Manual zoom detection - now uses keyboard shortcuts
+    // Manual zoom detection - now uses keyboard shortcuts with correct constant names
     if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0 &&
         data->rx == 0 && data->ry == 0) { // Only check zoom when no relative movement
 
@@ -111,13 +111,13 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
                         (int)distanceChange, zoom_steps);
 
                 if (zoom_steps > 0) {
-                    // Zoom IN - Send Ctrl+Plus
+                    // Zoom IN - Send Ctrl+Plus (use correct constant names)
                     LOG_INF("ZOOM IN - SENDING CTRL+=");
-                    send_keyboard_combo(KEY_LEFTCTRL, KEY_EQUAL);
+                    send_keyboard_combo(INPUT_KEY_LEFTCTRL, INPUT_KEY_EQUAL);
                 } else {
-                    // Zoom OUT - Send Ctrl+Minus
+                    // Zoom OUT - Send Ctrl+Minus (use correct constant names)
                     LOG_INF("ZOOM OUT - SENDING CTRL+-");
-                    send_keyboard_combo(KEY_LEFTCTRL, KEY_MINUS);
+                    send_keyboard_combo(INPUT_KEY_LEFTCTRL, INPUT_KEY_MINUS);
                 }
 
                 // Update start positions to prevent continuous zoom

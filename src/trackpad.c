@@ -20,8 +20,7 @@ static int consecutive_i2c_errors = 0;
 static int64_t last_error_time = 0;
 
 // NEW: Send keyboard events using input system
-// This approach sends keyboard events through the input system
-// which should work better for external modules
+// Simplified approach - just send the key events without sync
 void send_keyboard_key(uint16_t keycode) {
     event_count++;
     LOG_INF("KEYBOARD EVENT #%d: keycode=%d", event_count, keycode);
@@ -34,27 +33,13 @@ void send_keyboard_key(uint16_t keycode) {
             return;
         }
 
-        // Send sync
-        ret = input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
-        if (ret < 0) {
-            LOG_ERR("Failed to send sync after key press: %d", ret);
-            return;
-        }
-
         // Small delay
         k_msleep(10);
 
         // Send key release
-        ret = input_report(trackpad_device, INPUT_EV_KEY, keycode, 0, false, K_NO_WAIT);
+        ret = input_report(trackpad_device, INPUT_EV_KEY, keycode, 0, true, K_NO_WAIT);
         if (ret < 0) {
             LOG_ERR("Failed to send key release: %d", ret);
-            return;
-        }
-
-        // Send sync
-        ret = input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
-        if (ret < 0) {
-            LOG_ERR("Failed to send sync after key release: %d", ret);
             return;
         }
 
@@ -71,22 +56,18 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     if (trackpad_device) {
         // Press modifier
         input_report(trackpad_device, INPUT_EV_KEY, modifier, 1, false, K_NO_WAIT);
-        input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
         k_msleep(10);
 
         // Press main key
         input_report(trackpad_device, INPUT_EV_KEY, keycode, 1, false, K_NO_WAIT);
-        input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
         k_msleep(10);
 
         // Release main key
         input_report(trackpad_device, INPUT_EV_KEY, keycode, 0, false, K_NO_WAIT);
-        input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
         k_msleep(10);
 
         // Release modifier
-        input_report(trackpad_device, INPUT_EV_KEY, modifier, 0, false, K_NO_WAIT);
-        input_report(trackpad_device, INPUT_EV_SYN, INPUT_SYN_REPORT, 0, true, K_NO_WAIT);
+        input_report(trackpad_device, INPUT_EV_KEY, modifier, 0, true, K_NO_WAIT);
 
         LOG_DBG("Keyboard combo sent successfully");
     } else {
