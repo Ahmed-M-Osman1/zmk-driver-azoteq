@@ -98,8 +98,8 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
         float distanceChange = currentDistance - initialDistance;
 
-        LOG_DBG("Zoom check: initial=%.1f, current=%.1f, change=%.1f",
-                (double)initialDistance, (double)currentDistance, (double)distanceChange);
+        LOG_DBG("Zoom check: initial=%d, current=%d, change=%d",
+                (int)initialDistance, (int)currentDistance, (int)distanceChange);
 
         // Only trigger zoom if change is significant
         if (fabsf(distanceChange) > ZOOM_THRESHOLD) {
@@ -107,21 +107,21 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             int zoom_steps = (int)(distanceChange / ZOOM_SENSITIVITY);
 
             if (zoom_steps != 0) {
-                LOG_INF("*** ZOOM: distance_change=%.1f, steps=%d ***",
-                        (double)distanceChange, zoom_steps);
+                LOG_INF("*** ZOOM: distance_change=%d, steps=%d ***",
+                        (int)distanceChange, zoom_steps);
 
-                // Send zoom events (Ctrl + scroll wheel)
-                // First press Ctrl
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_LEFTCTRL, 1, false);
-
-                // Then send scroll wheel events
-                for (int i = 0; i < abs(zoom_steps); i++) {
-                    int direction = zoom_steps > 0 ? 1 : -1;  // positive = zoom in, negative = zoom out
-                    send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, direction, false);
+                // Simple test - just send + and - keys
+                if (zoom_steps > 0) {
+                    // Zoom IN - Send = key (+ key)
+                    LOG_INF("ZOOM IN - SENDING = KEY");
+                    send_input_event(INPUT_EV_KEY, 13, 1, false); // = key
+                    send_input_event(INPUT_EV_KEY, 13, 0, true);
+                } else {
+                    // Zoom OUT - Send - key
+                    LOG_INF("ZOOM OUT - SENDING - KEY");
+                    send_input_event(INPUT_EV_KEY, 12, 1, false); // - key
+                    send_input_event(INPUT_EV_KEY, 12, 0, true);
                 }
-
-                // Release Ctrl and sync
-                send_input_event(INPUT_EV_KEY, INPUT_KEY_LEFTCTRL, 0, true);
 
                 // Update start positions to prevent continuous zoom
                 state->twoFingerStartPos[0].x = data->fingers[0].ax;

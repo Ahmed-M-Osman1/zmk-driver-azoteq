@@ -41,7 +41,7 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
     // Check for three finger swipe gestures - only check after some time has passed
     int64_t time_since_start = k_uptime_get() - state->threeFingerPressTime;
-    if (state->threeFingersPressed && time_since_start > 50 && // Wait 50ms before checking swipes
+    if (state->threeFingersPressed && time_since_start > 100 && // Wait 100ms before checking swipes
         data->fingers[0].strength > 0 && data->fingers[1].strength > 0 && data->fingers[2].strength > 0) {
 
         // Calculate average movement in Y direction
@@ -52,32 +52,43 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
         float yMovement = currentAvgY - initialAvgY;
 
-        LOG_DBG("Three finger Y movement: initial_avg=%.1f, current_avg=%.1f, movement=%.1f",
-                (double)initialAvgY, (double)currentAvgY, (double)yMovement);
+        LOG_DBG("Three finger Y movement: initial_avg=%d, current_avg=%d, movement=%d",
+                (int)initialAvgY, (int)currentAvgY, (int)yMovement);
+
+        // Only trigger if movement is significant AND we haven't triggered recently
+        static int64_t last_swipe_time = 0;
+        int64_t current_time = k_uptime_get();
+
+        // Prevent rapid re-triggering (500ms cooldown)
+        if (current_time - last_swipe_time < 500) {
+            return;
+        }
 
         // Detect significant upward movement (swipe up)
         if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
-            LOG_INF("*** THREE FINGER SWIPE UP -> F3 ***");
+            LOG_INF("*** THREE FINGER SWIPE UP -> A KEY TEST ***");
 
-            // Send F3 key press
-            send_input_event(INPUT_EV_KEY, INPUT_KEY_F3, 1, true);
-            send_input_event(INPUT_EV_KEY, INPUT_KEY_F3, 0, true);
+            // Send A key as test (code 30)
+            send_input_event(INPUT_EV_KEY, 30, 1, false);
+            send_input_event(INPUT_EV_KEY, 30, 0, true);
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;
+            last_swipe_time = current_time;
             return;
         }
 
         // Detect significant downward movement (swipe down)
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
-            LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 ***");
+            LOG_INF("*** THREE FINGER SWIPE DOWN -> B KEY TEST ***");
 
-            // Send F4 key press (you can change this to whatever you want)
-            send_input_event(INPUT_EV_KEY, INPUT_KEY_F4, 1, true);
-            send_input_event(INPUT_EV_KEY, INPUT_KEY_F4, 0, true);
+            // Send B key as test (code 48)
+            send_input_event(INPUT_EV_KEY, 48, 1, false);
+            send_input_event(INPUT_EV_KEY, 48, 0, true);
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;
+            last_swipe_time = current_time;
             return;
         }
     }
@@ -89,7 +100,7 @@ void reset_three_finger_state(struct gesture_state *state) {
         k_uptime_get() - state->threeFingerPressTime < TRACKPAD_THREE_FINGER_CLICK_TIME) {
         LOG_INF("*** THREE FINGER CLICK -> MIDDLE CLICK ***");
         // Middle click via input event
-        send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, true);
+        send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
         send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
     }
 
