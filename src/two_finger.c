@@ -29,23 +29,23 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         state->twoFingerStartPos[1].x = data->fingers[1].ax;
         state->twoFingerStartPos[1].y = data->fingers[1].ay;
 
-        LOG_DBG("Two finger gesture started at positions (%d,%d) and (%d,%d)",
+        LOG_INF("Two finger gesture started at positions (%d,%d) and (%d,%d)",
                 state->twoFingerStartPos[0].x, state->twoFingerStartPos[0].y,
                 state->twoFingerStartPos[1].x, state->twoFingerStartPos[1].y);
         return;
     }
 
-    // Handle hardware gestures
+    // Handle hardware gestures first
     if (data->gestures1) {
         switch(data->gestures1) {
             case GESTURE_TWO_FINGER_TAP:
                 LOG_INF("*** TWO FINGER TAP -> RIGHT CLICK ***");
                 send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
                 send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
-                break;
+                return; // Don't check zoom after tap
 
             case GESTURE_SCROLLG:
-                // Handle scrolling
+                // Handle scrolling - this takes priority over zoom
                 state->lastXScrollReport += data->rx;
                 int8_t pan = -data->ry;
                 int8_t scroll = 0;
@@ -64,11 +64,11 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
                 if (scroll != 0) {
                     send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, scroll, true);
                 }
-                break;
+                return; // Don't check zoom during scroll
 
             case GESTURE_ZOOM:
                 LOG_INF("*** HARDWARE ZOOM DETECTED ***");
-                // Hardware zoom gesture detected, but we'll handle zoom manually below
+                // Let manual zoom detection handle it below
                 break;
 
             default:
@@ -79,8 +79,10 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
-    // Manual zoom detection based on finger distance changes
-    if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0) {
+    // Manual zoom detection - only when no other gestures are active
+    if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0 &&
+        data->rx == 0 && data->ry == 0) { // Only check zoom when no relative movement
+
         // Calculate current distance between fingers
         float currentDistance = calculate_distance(
             data->fingers[0].ax, data->fingers[0].ay,
@@ -95,6 +97,9 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
         float distanceChange = currentDistance - initialDistance;
 
+        LOG_DBG("Zoom check: initial=%.1f, current=%.1f, change=%.1f",
+                (double)initialDistance, (double)currentDistance, (double)distanceChange);
+
         // Only trigger zoom if change is significant
         if (fabsf(distanceChange) > ZOOM_THRESHOLD) {
             // Determine zoom direction and magnitude
@@ -102,7 +107,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
             if (zoom_steps != 0) {
                 LOG_INF("*** ZOOM: distance_change=%.1f, steps=%d ***",
-                        distanceChange, zoom_steps);
+                        (double)distanceChange, zoom_steps);
 
                 // Send zoom events (Ctrl + scroll wheel)
                 // First press Ctrl

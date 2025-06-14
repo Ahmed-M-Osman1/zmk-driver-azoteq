@@ -39,12 +39,13 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         return;
     }
 
-    // Check for three finger swipe gestures
-    if (state->threeFingersPressed && data->fingers[0].strength > 0 &&
-        data->fingers[1].strength > 0 && data->fingers[2].strength > 0) {
+    // Check for three finger swipe gestures - only check after some time has passed
+    int64_t time_since_start = k_uptime_get() - state->threeFingerPressTime;
+    if (state->threeFingersPressed && time_since_start > 50 && // Wait 50ms before checking swipes
+        data->fingers[0].strength > 0 && data->fingers[1].strength > 0 && data->fingers[2].strength > 0) {
 
         // Calculate average movement in Y direction
-        float initialAvgY = (state->threeFingerStartPos[0].y +
+        float initialAvgY = (float)(state->threeFingerStartPos[0].y +
                            state->threeFingerStartPos[1].y +
                            state->threeFingerStartPos[2].y) / 3.0f;
         float currentAvgY = calculate_average_y(data, 3);
@@ -52,7 +53,7 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         float yMovement = currentAvgY - initialAvgY;
 
         LOG_DBG("Three finger Y movement: initial_avg=%.1f, current_avg=%.1f, movement=%.1f",
-                initialAvgY, currentAvgY, yMovement);
+                (double)initialAvgY, (double)currentAvgY, (double)yMovement);
 
         // Detect significant upward movement (swipe up)
         if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {

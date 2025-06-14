@@ -49,8 +49,8 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
         float sensMp = (float)state->mouseSensitivity / 128.0F;
 
         // Accumulate movement
-        state->accumPos.x += data->rx * sensMp;
-        state->accumPos.y += data->ry * sensMp;
+        state->accumPos.x += -data->rx * sensMp;
+        state->accumPos.y += -data->ry * sensMp;
 
         int16_t xp = (int16_t)state->accumPos.x;
         int16_t yp = (int16_t)state->accumPos.y;

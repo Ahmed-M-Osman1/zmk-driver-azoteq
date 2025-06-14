@@ -52,6 +52,11 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         }
     }
 
+    // Debug two finger positions if enabled
+    if (data->finger_count == 2) {
+        debug_two_finger_positions(data, &g_gesture_state);
+    }
+
     // Handle gestures based on finger count
     switch (data->finger_count) {
         case 0:
