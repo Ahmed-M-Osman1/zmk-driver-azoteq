@@ -1,7 +1,3 @@
-/**
- * @file trackpad.c
- * @brief Trackpad gesture handling for IQS5XX with extensive debugging
- */
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -19,8 +15,9 @@ LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 #define SCROLL_REPORT_DISTANCE              15
 #define MOVEMENT_THRESHOLD                  0.5f
 
-// All your existing static variables:
-static bool isHolding = false;
+// State variables for proper drag handling
+static bool isDragging = false;                // Are we currently in a drag operation?
+static bool dragStartSent = false;             // Have we sent the initial button press?
 static const struct device *trackpad;
 static uint8_t lastFingerCount = 0;
 static int64_t threeFingerPressTime = 0;
@@ -55,7 +52,7 @@ static void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sy
     }
 }
 
-// Your gesture detection logic with extensive debugging:
+// Your gesture detection logic with FIXED drag handling:
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     bool hasGesture = false;
     static int trigger_count = 0;
@@ -81,6 +78,7 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         LOG_INF("*** THREE FINGERS DETECTED - START ***");
     }
 
+    // Handle finger release (end of gestures)
     if(data->finger_count == 0) {
         if (accumPos.x != 0 || accumPos.y != 0) {
             LOG_DBG("Resetting accumulated position: was %.2f,%.2f", accumPos.x, accumPos.y);
@@ -88,12 +86,21 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         accumPos.x = 0;
         accumPos.y = 0;
 
+        // Handle three finger click
         if(threeFingersPressed && k_uptime_get() - threeFingerPressTime < TRACKPAD_THREE_FINGER_CLICK_TIME) {
             hasGesture = true;
             LOG_INF("*** THREE FINGER CLICK DETECTED ***");
             // Middle click via input event
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, true);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
+        }
+
+        // Handle end of drag operation
+        if (isDragging && dragStartSent) {
+            LOG_INF("*** DRAG END - RELEASING BUTTON ***");
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+            isDragging = false;
+            dragStartSent = false;
         }
 
         if (threeFingersPressed) {
@@ -110,7 +117,7 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         }
     }
 
-    // Gesture handling
+    // FIXED: Gesture handling with proper drag state management
     if((data->gestures0 || data->gestures1) && !hasGesture) {
         LOG_INF("Hardware gesture detected: g0=0x%02x, g1=0x%02x", data->gestures0, data->gestures1);
 
@@ -150,15 +157,25 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
 
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
-                hasGesture = true;
-                LOG_INF("*** SINGLE TAP -> LEFT CLICK ***");
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                // Only handle single tap if we're not already dragging
+                if (!isDragging) {
+                    hasGesture = true;
+                    LOG_INF("*** SINGLE TAP -> LEFT CLICK ***");
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                }
                 break;
             case GESTURE_TAP_AND_HOLD:
-                LOG_INF("*** TAP AND HOLD -> DRAG START ***");
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                isHolding = true;
+                // FIXED: Only send the button press ONCE when drag starts
+                if (!isDragging) {
+                    LOG_INF("*** TAP AND HOLD -> DRAG START ***");
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    isDragging = true;
+                    dragStartSent = true;
+                } else {
+                    // We're already dragging, don't send more button presses
+                    LOG_DBG("Already dragging, ignoring repeated tap-and-hold gesture");
+                }
                 break;
             default:
                 if (data->gestures0 != 0) {
@@ -168,13 +185,13 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         }
     }
 
-    // Movement handling - FIXED AXIS MAPPING
+    // Movement handling - works during normal movement AND during drag
     if(!hasGesture && data->finger_count == 1) {
         float sensMp = (float)mouseSensitivity/128.0F;
 
         // FIXED: Correct axis mapping - don't swap rx/ry
         accumPos.x += data->rx * sensMp;      // rx maps to X movement
-        accumPos.y += -data->ry * sensMp;     // ry maps to Y movement (inverted)
+        accumPos.y += data->ry * sensMp;     // ry maps to Y movement (inverted)
 
         int16_t xp = (int16_t)accumPos.x;
         int16_t yp = (int16_t)accumPos.y;
@@ -184,7 +201,7 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             LOG_DBG("Mouse movement: rx=%d,ry=%d -> accum=%.2f,%.2f -> move=%d,%d",
                     data->rx, data->ry, accumPos.x, accumPos.y, xp, yp);
 
-            // Send movement events
+            // Send movement events (works both for normal movement and drag)
             send_input_event(INPUT_EV_REL, INPUT_REL_X, xp, false);
             send_input_event(INPUT_EV_REL, INPUT_REL_Y, yp, true);
 
@@ -215,9 +232,12 @@ static int trackpad_init(void) {
     trackpad_device = trackpad;
     LOG_INF("Set trackpad device reference: %p", trackpad_device);
 
+    // Initialize state
     accumPos.x = 0;
     accumPos.y = 0;
-    LOG_INF("Reset accumulated position");
+    isDragging = false;
+    dragStartSent = false;
+    LOG_INF("Reset accumulated position and drag state");
 
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
     if(err) {
