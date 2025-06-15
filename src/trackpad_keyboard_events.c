@@ -1,85 +1,118 @@
-// src/trackpad_keyboard_events.c
+// src/trackpad_keyboard_events.c - Simplified approach for external modules
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <zmk/event_manager.h>
-#include <zmk/events/keycode_state_changed.h>
-#include <zmk/events/key_position_state_changed.h>
-#include <zmk/keymap.h>
-#include <zmk/matrix.h>
+#include <zephyr/input/input.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// Virtual key positions for trackpad gestures based on 2x4 matrix
-// Row 0: positions 0,1,2,3 -> physical keys 0,1 + virtual F3,F4
-// Row 1: positions 4,5,6,7 -> physical keys 2,3 + virtual zoom in/out
-#define TRACKPAD_GESTURE_F3_POS     2   // RC(0,2) - F3
-#define TRACKPAD_GESTURE_F4_POS     3   // RC(0,3) - F4
-#define TRACKPAD_GESTURE_ZOOM_IN    6   // RC(1,2) - Zoom in
-#define TRACKPAD_GESTURE_ZOOM_OUT   7   // RC(1,3) - Zoom out
+// Since we can't access ZMK's internal APIs, we'll use a different approach
+// We'll create a virtual input device that sends keyboard events
 
-// Function to send a key press/release through ZMK's keymap system
-static int send_trackpad_keycode(uint8_t key_position, bool pressed) {
-    struct zmk_keycode_state_changed *ev = new_zmk_keycode_state_changed();
-    if (!ev) {
-        LOG_ERR("Failed to allocate keycode state changed event");
-        return -ENOMEM;
-    }
+static const struct device *keyboard_dev = NULL;
 
-    // Get the keycode from the keymap for this position
-    ev->usage_page = HID_USAGE_KEY;
-    ev->keycode = zmk_keymap_layer_event_from_user_input(0, key_position);
-    ev->state = pressed;
-    ev->timestamp = k_uptime_get();
-
-    LOG_INF("Sending trackpad keycode: pos=%d, code=0x%04x, pressed=%d",
-            key_position, ev->keycode, pressed);
-
-    return ZMK_EVENT_RAISE(ev);
+// Initialize keyboard device reference
+int trackpad_keyboard_init(const struct device *input_dev) {
+    keyboard_dev = input_dev;
+    LOG_INF("Trackpad keyboard events initialized with device: %p", keyboard_dev);
+    return 0;
 }
 
-// Alternative approach using key position events
-static int send_trackpad_key_position(uint8_t key_position, bool pressed) {
-    struct zmk_key_position_state_changed *ev = new_zmk_key_position_state_changed();
-    if (!ev) {
-        LOG_ERR("Failed to allocate key position state changed event");
-        return -ENOMEM;
+// Send a keyboard key through the input system
+static int send_keyboard_event(uint16_t keycode) {
+    if (!keyboard_dev) {
+        LOG_ERR("Keyboard device not initialized");
+        return -ENODEV;
     }
 
-    ev->position = key_position;
-    ev->state = pressed;
-    ev->timestamp = k_uptime_get();
+    LOG_INF("Sending keyboard event: keycode=%d", keycode);
 
-    LOG_INF("Sending trackpad key position: pos=%d, pressed=%d", key_position, pressed);
+    // Send key press
+    int ret = input_report(keyboard_dev, INPUT_EV_KEY, keycode, 1, false, K_NO_WAIT);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key press: %d", ret);
+        return ret;
+    }
 
-    return ZMK_EVENT_RAISE(ev);
+    // Small delay
+    k_msleep(10);
+
+    // Send key release
+    ret = input_report(keyboard_dev, INPUT_EV_KEY, keycode, 0, true, K_NO_WAIT);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key release: %d", ret);
+        return ret;
+    }
+
+    LOG_DBG("Keyboard event sent successfully");
+    return 0;
 }
 
-// Public functions for your gesture handlers
+// Send combination keys (modifier + key)
+static int send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
+    if (!keyboard_dev) {
+        LOG_ERR("Keyboard device not initialized");
+        return -ENODEV;
+    }
+
+    LOG_INF("Sending keyboard combo: mod=%d, key=%d", modifier, keycode);
+
+    // Send modifier press
+    int ret = input_report(keyboard_dev, INPUT_EV_KEY, modifier, 1, false, K_NO_WAIT);
+    if (ret < 0) {
+        LOG_ERR("Failed to send modifier press: %d", ret);
+        return ret;
+    }
+
+    k_msleep(5);
+
+    // Send key press
+    ret = input_report(keyboard_dev, INPUT_EV_KEY, keycode, 1, false, K_NO_WAIT);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key press: %d", ret);
+        return ret;
+    }
+
+    k_msleep(10);
+
+    // Send key release
+    ret = input_report(keyboard_dev, INPUT_EV_KEY, keycode, 0, false, K_NO_WAIT);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key release: %d", ret);
+        return ret;
+    }
+
+    k_msleep(5);
+
+    // Send modifier release
+    ret = input_report(keyboard_dev, INPUT_EV_KEY, modifier, 0, true, K_NO_WAIT);
+    if (ret < 0) {
+        LOG_ERR("Failed to send modifier release: %d", ret);
+        return ret;
+    }
+
+    LOG_DBG("Keyboard combo sent successfully");
+    return 0;
+}
+
+// Public functions for trackpad gestures
 void send_trackpad_f3(void) {
     LOG_INF("*** TRACKPAD F3 KEY ***");
-    send_trackpad_key_position(TRACKPAD_GESTURE_F3_POS, true);
-    k_msleep(10);
-    send_trackpad_key_position(TRACKPAD_GESTURE_F3_POS, false);
+    send_keyboard_event(INPUT_KEY_F3);
 }
 
 void send_trackpad_f4(void) {
     LOG_INF("*** TRACKPAD F4 KEY ***");
-    send_trackpad_key_position(TRACKPAD_GESTURE_F4_POS, true);
-    k_msleep(10);
-    send_trackpad_key_position(TRACKPAD_GESTURE_F4_POS, false);
+    send_keyboard_event(INPUT_KEY_F4);
 }
 
 void send_trackpad_zoom_in(void) {
     LOG_INF("*** TRACKPAD ZOOM IN ***");
-    send_trackpad_key_position(TRACKPAD_GESTURE_ZOOM_IN, true);
-    k_msleep(10);
-    send_trackpad_key_position(TRACKPAD_GESTURE_ZOOM_IN, false);
+    send_keyboard_combo(INPUT_KEY_LEFTCTRL, INPUT_KEY_EQUAL);
 }
 
 void send_trackpad_zoom_out(void) {
     LOG_INF("*** TRACKPAD ZOOM OUT ***");
-    send_trackpad_key_position(TRACKPAD_GESTURE_ZOOM_OUT, true);
-    k_msleep(10);
-    send_trackpad_key_position(TRACKPAD_GESTURE_ZOOM_OUT, false);
+    send_keyboard_combo(INPUT_KEY_LEFTCTRL, INPUT_KEY_MINUS);
 }

@@ -7,63 +7,29 @@
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include "iqs5xx.h"
 #include "gesture_handlers.h"
+#include "trackpad_keyboard_events.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// Function declarations
-static void handle_i2c_error(const struct device *dev);
 static struct gesture_state g_gesture_state = {0};
 static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
-static int consecutive_i2c_errors = 0;
-static int64_t last_error_time = 0;
 
-// NEW: Send keyboard keys using existing input system
-void send_special_key(uint16_t keycode) {
-    event_count++;
-    LOG_INF("SPECIAL KEY #%d: keycode=%d", event_count, keycode);
-
-    if (trackpad_device) {
-        // Send key press
-        int ret = input_report(trackpad_device, INPUT_EV_KEY, keycode, 1, false, K_NO_WAIT);
-        if (ret < 0) {
-            LOG_ERR("Failed to send special key press: %d", ret);
-            return;
-        }
-
-        k_msleep(10);
-
-        ret = input_report(trackpad_device, INPUT_EV_KEY, keycode, 0, true, K_NO_WAIT);
-        if (ret < 0) {
-            LOG_ERR("Failed to send special key release: %d", ret);
-            return;
-        }
-
-        LOG_DBG("Special key sent successfully");
-    } else {
-        LOG_ERR("Trackpad device is NULL - cannot send special key");
-    }
-}
-
-// Map gestures to high-numbered keys that are less likely to conflict
+// Send keyboard keys using the trackpad keyboard events system
 void send_keyboard_key(uint16_t keycode) {
     if (keycode == INPUT_KEY_F3) {
-        // Use F13 key (should be available)
-        send_special_key(INPUT_KEY_F13);
+        send_trackpad_f3();
     } else if (keycode == INPUT_KEY_F4) {
-        // Use F14 key
-        send_special_key(INPUT_KEY_F14);
+        send_trackpad_f4();
     }
 }
 
 void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     if (modifier == INPUT_KEY_LEFTCTRL && keycode == INPUT_KEY_EQUAL) {
-        // Use F15 for zoom in
-        send_special_key(INPUT_KEY_F15);
+        send_trackpad_zoom_in();
     } else if (modifier == INPUT_KEY_LEFTCTRL && keycode == INPUT_KEY_MINUS) {
-        // Use F16 for zoom out
-        send_special_key(INPUT_KEY_F16);
+        send_trackpad_zoom_out();
     }
 }
 
@@ -85,11 +51,8 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     }
 }
 
-// All the existing gesture handler code remains the same...
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
-
-    consecutive_i2c_errors = 0;
 
     trigger_count++;
     LOG_DBG("=== TRIGGER #%d ===", trigger_count);
@@ -160,6 +123,13 @@ static int trackpad_init(void) {
     trackpad_device = trackpad;
     LOG_INF("Set trackpad device reference: %p", trackpad_device);
 
+    // Initialize the keyboard events system
+    int ret = trackpad_keyboard_init(trackpad_device);
+    if (ret < 0) {
+        LOG_ERR("Failed to initialize trackpad keyboard events: %d", ret);
+        return ret;
+    }
+
     memset(&g_gesture_state, 0, sizeof(g_gesture_state));
     g_gesture_state.mouseSensitivity = 200;
     LOG_INF("Initialized gesture state");
@@ -174,8 +144,8 @@ static int trackpad_init(void) {
     LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
     LOG_INF("Supported gestures:");
     LOG_INF("  1 finger: tap (left click), tap-hold (drag), movement");
-    LOG_INF("  2 finger: tap (right click), scroll, zoom (F15/F16)");
-    LOG_INF("  3 finger: tap (middle click), swipe up/down (F13/F14)");
+    LOG_INF("  2 finger: tap (right click), scroll, zoom (Ctrl+Plus/Minus)");
+    LOG_INF("  3 finger: tap (middle click), swipe up/down (F3/F4)");
 
     return 0;
 }
