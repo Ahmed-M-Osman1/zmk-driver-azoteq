@@ -1,4 +1,4 @@
-// src/three_finger.c - Fixed API calls
+// src/three_finger.c - Fixed ZMK API calls
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -19,36 +19,40 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// Send F3 key using ZMK HID directly
+// Send F3 key using ZMK HID directly - Fixed version
 static void send_f3_key_direct(void) {
     LOG_INF("*** SENDING F3 KEY DIRECTLY ***");
 
     // Use ZMK's HID keyboard system directly
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F3);
-    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
+
+    // Send report with correct usage page (0x01 for keyboard)
+    zmk_endpoints_send_report(0x01);
 
     // Short delay then release
     k_msleep(50);
 
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F3);
-    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
+    zmk_endpoints_send_report(0x01);
 
     LOG_INF("F3 key sent successfully via HID");
 }
 
-// Send F4 key using ZMK HID directly
+// Send F4 key using ZMK HID directly - Fixed version
 static void send_f4_key_direct(void) {
     LOG_INF("*** SENDING F4 KEY DIRECTLY ***");
 
     // Use ZMK's HID keyboard system directly
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F4);
-    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
+
+    // Send report with correct usage page (0x01 for keyboard)
+    zmk_endpoints_send_report(0x01);
 
     // Short delay then release
     k_msleep(50);
 
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F4);
-    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
+    zmk_endpoints_send_report(0x01);
 
     LOG_INF("F4 key sent successfully via HID");
 }
