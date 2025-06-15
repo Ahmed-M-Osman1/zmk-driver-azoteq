@@ -1,4 +1,4 @@
-// src/trackpad.c - Simplified with ZMK keys
+// src/trackpad.c - Added rate-limiting for trackpad events
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -19,6 +19,7 @@ static struct gesture_state g_gesture_state = {0};
 static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
+static int64_t last_event_time = 0; // For rate-limiting
 
 // Send keyboard keys using ZMK's HID system directly (simplified)
 void send_keyboard_key(uint16_t keycode) {
@@ -39,17 +40,37 @@ void send_keyboard_key(uint16_t keycode) {
             return;
     }
 
-    // Use ZMK's HID keyboard system directly
-    zmk_hid_keyboard_press(zmk_keycode);
+    // Clear HID state to prevent stuck keys
+    zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(0x07);
 
-    // Short delay then release
+    // Press key
+    int ret1 = zmk_hid_keyboard_press(zmk_keycode);
+    if (ret1 < 0) {
+        LOG_ERR("Failed to press keycode %d: %d", zmk_keycode, ret1);
+        return;
+    }
+    // Send report
+    int ret2 = zmk_endpoints_send_report(0x07);
+    if (ret2 < 0) {
+        LOG_ERR("Failed to send press report for keycode %d: %d", zmk_keycode, ret2);
+        zmk_hid_keyboard_release(zmk_keycode);
+        return;
+    }
+    // Short delay to ensure host registers press
     k_msleep(50);
+    // Release key
+    int ret3 = zmk_hid_keyboard_release(zmk_keycode);
+    if (ret3 < 0) {
+        LOG_ERR("Failed to release keycode %d: %d", zmk_keycode, ret3);
+    }
+    // Send final report
+    int ret4 = zmk_endpoints_send_report(0x07);
+    if (ret4 < 0) {
+        LOG_ERR("Failed to send release report for keycode %d: %d", zmk_keycode, ret4);
+    }
 
-    zmk_hid_keyboard_release(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
-
-    LOG_INF("Key sent successfully via HID");
+    LOG_INF("Keycode %d sent successfully via HID", zmk_keycode);
 }
 
 void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
@@ -80,22 +101,22 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
             return;
     }
 
-    // Use ZMK's HID keyboard system directly
+    // Clear HID state
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+
     // Press Ctrl
     zmk_hid_keyboard_press(zmk_modifier);
     zmk_endpoints_send_report(0x07);
     k_msleep(10);
-
     // Press key
     zmk_hid_keyboard_press(zmk_keycode);
     zmk_endpoints_send_report(0x07);
     k_msleep(50);
-
     // Release key
     zmk_hid_keyboard_release(zmk_keycode);
     zmk_endpoints_send_report(0x07);
     k_msleep(10);
-
     // Release Ctrl
     zmk_hid_keyboard_release(zmk_modifier);
     zmk_endpoints_send_report(0x07);
@@ -123,6 +144,15 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
 
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
+    int64_t current_time = k_uptime_get();
+
+    // Rate-limit to 50ms between events
+    if (current_time - last_event_time < 50) {
+        LOG_DBG("Skipping trigger #%d: too soon (%lld ms since last event)",
+                trigger_count + 1, current_time - last_event_time);
+        return;
+    }
+    last_event_time = current_time;
 
     trigger_count++;
     LOG_DBG("=== TRIGGER #%d ===", trigger_count);

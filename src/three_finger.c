@@ -1,4 +1,4 @@
-// src/three_finger.c - Enhanced to prevent multiple F4 presses and ensure proper release
+// src/three_finger.c - Enhanced with stricter debouncing and logging
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -23,61 +23,26 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// Send F4 key using ZMK's HID system directly - Robust version
-static void send_f4_key_direct(void) {
-    LOG_INF("*** SENDING F4 KEY DIRECTLY ***");
-
-    // Ensure no keys are stuck by clearing all keyboard states
-    zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
-
-    // Press F4
-    int ret1 = zmk_hid_keyboard_press(F4);
-    LOG_INF("F4 press: %d", ret1);
-    if (ret1 < 0) {
-        LOG_ERR("Failed to press F4");
-        return;
-    }
-
-    // Send report for press
-    int ret2 = zmk_endpoints_send_report(0x07);
-    LOG_INF("F4 press report: %d", ret2);
-    if (ret2 < 0) {
-        LOG_ERR("Failed to send F4 press report");
-        zmk_hid_keyboard_release(F4); // Clean up on failure
-        return;
-    }
-
-    // Short delay to ensure the press is registered
-    k_msleep(50);
-
-    // Release F4
-    int ret3 = zmk_hid_keyboard_release(F4);
-    LOG_INF("F4 release: %d", ret3);
-    if (ret3 < 0) {
-        LOG_ERR("Failed to release F4");
-    }
-
-    // Send report for release
-    int ret4 = zmk_endpoints_send_report(0x07);
-    LOG_INF("F4 release report: %d", ret4);
-    if (ret4 < 0) {
-        LOG_ERR("Failed to send F4 release report");
-    }
-
+// Send F4 key using keyboard event helper
+static void send_f4_key(void) {
+    LOG_INF("*** SENDING F4 KEY ***");
+    send_keyboard_key(INPUT_KEY_F4); // Use INPUT_KEY_F4 for consistency
     LOG_INF("F4 sequence complete - Launchpad should appear!");
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
+    // Early exit if not exactly three fingers
     if (data->finger_count != 3) {
+        LOG_DBG("Invalid finger count: %d", data->finger_count);
         return;
     }
 
     int64_t current_time = k_uptime_get();
 
-    // Check global cooldown - prevent any gesture processing if too recent
+    // Check global cooldown - block all processing if too recent
     if (current_time - global_gesture_cooldown < 1000) { // 1 second cooldown
-        LOG_DBG("Three finger gesture in cooldown period");
+        LOG_DBG("Three finger gesture blocked: in cooldown period (%lld ms remaining)",
+                1000 - (current_time - global_gesture_cooldown));
         return;
     }
 
@@ -85,7 +50,7 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
     if (!state->threeFingersPressed) {
         state->threeFingerPressTime = current_time;
         state->threeFingersPressed = true;
-        state->gestureTriggered = false; // Track if a gesture was triggered in this session
+        state->gestureTriggered = false;
 
         // Store initial positions for swipe detection
         for (int i = 0; i < 3; i++) {
@@ -101,15 +66,15 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         return;
     }
 
-    // Skip further processing if a gesture was already triggered in this session
+    // Skip if gesture already triggered
     if (state->gestureTriggered) {
-        LOG_DBG("ahmed :: Gesture already triggered in this session, ignoring");
+        LOG_DBG("Gesture already triggered, ignoring event");
         return;
     }
 
-    // Check for three finger swipe gestures - only check after some time has passed
+    // Check for three finger swipe gestures after 100ms
     int64_t time_since_start = current_time - state->threeFingerPressTime;
-    if (state->threeFingersPressed && time_since_start > 100 && // Wait 100ms before checking swipes
+    if (time_since_start > 100 && // Wait 100ms before checking swipes
         data->fingers[0].strength > 0 && data->fingers[1].strength > 0 && data->fingers[2].strength > 0) {
 
         // Calculate average movement in Y direction
@@ -117,25 +82,24 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
                            state->threeFingerStartPos[1].y +
                            state->threeFingerStartPos[2].y) / 3.0f;
         float currentAvgY = calculate_average_y(data, 3);
-
         float yMovement = currentAvgY - initialAvgY;
 
-        LOG_DBG("Three finger Y movement: initial_avg=%d, current_avg=%d, movement=%d",
-                (int)initialAvgY, (int)currentAvgY, (int)yMovement);
+        LOG_DBG("Three finger Y movement: initial_avg=%.1f, current_avg=%.1f, movement=%.1f",
+                initialAvgY, currentAvgY, yMovement);
 
         // Detect significant downward movement (swipe down)
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY (LAUNCHPAD) ***");
 
-            // Use the direct HID method
-            send_f4_key_direct();
+            // Send F4 key
+            send_f4_key();
 
-            // Mark gesture as triggered to prevent re-processing
+            // Mark gesture as complete
             state->gestureTriggered = true;
             global_gesture_cooldown = current_time;
             state->threeFingersPressed = false;
 
-            LOG_INF("F4 gesture complete - cooldown active");
+            LOG_INF("F4 gesture complete - cooldown active for 1000ms");
             return;
         }
     }
@@ -146,10 +110,9 @@ void reset_three_finger_state(struct gesture_state *state) {
     if (state->threeFingersPressed && !state->gestureTriggered &&
         k_uptime_get() - state->threeFingerPressTime < TRACKPAD_THREE_FINGER_CLICK_TIME) {
 
-        // Check if we're in gesture cooldown (don't do click if gesture just happened)
+        // Check if we're in gesture cooldown
         if (k_uptime_get() - global_gesture_cooldown > 500) {
             LOG_INF("*** THREE FINGER CLICK -> MIDDLE CLICK ***");
-            // Middle click via input event (mouse events still use input system)
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
         } else {
