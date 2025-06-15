@@ -1,4 +1,4 @@
-// src/trackpad_keyboard_events.c - FIXED VERSION
+// src/trackpad_keyboard_events.c - FIXED VERSION with 0x07
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -16,91 +16,141 @@ int trackpad_keyboard_init(const struct device *input_dev) {
     return 0;
 }
 
-// FIXED: More reliable zoom with proper error checking
-static int send_zoom_combo_fixed(uint8_t modifier, uint8_t key, const char* description) {
-    LOG_INF("*** %s ***", description);
+// FIXED: Use 0x07 for keyboard HID usage page
+static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* description, int hold_time) {
+    LOG_INF("*** SENDING %s (mod:0x%02x + key:0x%02x) ***", description, modifier, key);
 
-    // Step 1: Clear everything first
-    zmk_hid_keyboard_clear();  // void function - no return value
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
+    // Clear any existing state - USE 0x07
+    zmk_hid_keyboard_clear();
+    int ret = zmk_endpoints_send_report(0x07);
+    if (ret < 0) {
+        LOG_ERR("Failed to clear keyboard state: %d", ret);
+        return ret;
+    }
+    k_msleep(50);
 
-    // Step 2: Press modifier and verify
-    int ret = zmk_hid_keyboard_press(modifier);
+    // Press modifier first
+    ret = zmk_hid_keyboard_press(modifier);
     if (ret < 0) {
         LOG_ERR("Failed to press modifier %d: %d", modifier, ret);
         return ret;
     }
-    zmk_endpoints_send_report(0x07);
-    k_msleep(20);  // Slightly longer for modifier
+    ret = zmk_endpoints_send_report(0x07);
+    if (ret < 0) {
+        LOG_ERR("Failed to send modifier report: %d", ret);
+        return ret;
+    }
+    k_msleep(30);
 
-    // Step 3: Press key and verify
+    // Press main key
     ret = zmk_hid_keyboard_press(key);
     if (ret < 0) {
         LOG_ERR("Failed to press key %d: %d", key, ret);
-        // Try to clean up modifier
         zmk_hid_keyboard_release(modifier);
         zmk_endpoints_send_report(0x07);
         return ret;
     }
-    zmk_endpoints_send_report(0x07);
-    k_msleep(40);  // Hold the combination
+    ret = zmk_endpoints_send_report(0x07);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key report: %d", ret);
+        return ret;
+    }
+    k_msleep(hold_time);
 
-    // Step 4: Release key first
+    // Release main key first
     ret = zmk_hid_keyboard_release(key);
     if (ret < 0) {
-        LOG_WRN("Failed to release key %d: %d", key, ret);
+        LOG_ERR("Failed to release key: %d", ret);
     }
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
+    ret = zmk_endpoints_send_report(0x07);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key release report: %d", ret);
+    }
+    k_msleep(20);
 
-    // Step 5: Release modifier
+    // Release modifier
     ret = zmk_hid_keyboard_release(modifier);
     if (ret < 0) {
-        LOG_WRN("Failed to release modifier %d: %d", modifier, ret);
+        LOG_ERR("Failed to release modifier: %d", ret);
     }
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
+    ret = zmk_endpoints_send_report(0x07);
+    if (ret < 0) {
+        LOG_ERR("Failed to send modifier release report: %d", ret);
+    }
+    k_msleep(30);
 
-    // Step 6: Final clear to ensure clean state
-    zmk_hid_keyboard_clear();  // void function - no return value
-    zmk_endpoints_send_report(0x07);
+    // Final clear
+    zmk_hid_keyboard_clear();
+    ret = zmk_endpoints_send_report(0x07);
+    k_msleep(20);
 
-    LOG_INF("%s completed successfully", description);
+    LOG_INF("%s sequence completed", description);
     return 0;
 }
 
-// ZOOM IN with better reliability
+// ZOOM IN with multiple fallback methods
 void send_trackpad_zoom_in(void) {
-    LOG_INF("*** ZOOM IN ***");
+    LOG_INF("=== STARTING ZOOM IN SEQUENCE ===");
 
-    int ret = send_zoom_combo_fixed(LCTRL, EQUAL, "Ctrl+Plus");
-    if (ret < 0) {
-        LOG_ERR("Zoom in failed: %d", ret);
-    } else {
-        LOG_INF("Zoom in complete");
-    }
+    // Method 1: Ctrl + Plus (using correct keycodes)
+    send_zoom_combo(LCTRL, EQUAL, "Ctrl+Equal(Plus)", 150);
+    k_msleep(100);
+
+    // Method 2: Ctrl + Shift + Plus (explicit plus)
+    LOG_INF("Trying Ctrl+Shift+Plus explicitly");
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(50);
+
+    zmk_hid_keyboard_press(LCTRL);
+    zmk_endpoints_send_report(0x07);
+    k_msleep(20);
+    zmk_hid_keyboard_press(LSHIFT);
+    zmk_endpoints_send_report(0x07);
+    k_msleep(20);
+    zmk_hid_keyboard_press(EQUAL); // Shift+Equal = Plus
+    zmk_endpoints_send_report(0x07);
+    k_msleep(150);
+
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(100);
+
+    // Method 3: Cmd+Plus for Mac compatibility
+    send_zoom_combo(LGUI, EQUAL, "Cmd+Plus(Mac)", 150);
+    k_msleep(100);
+
+    // Method 4: Try numeric keypad plus
+    send_zoom_combo(LCTRL, KP_PLUS, "Ctrl+NumPad_Plus", 150);
+
+    LOG_INF("=== ZOOM IN SEQUENCE COMPLETE ===");
 }
 
-// ZOOM OUT with better reliability
+// ZOOM OUT with multiple fallback methods
 void send_trackpad_zoom_out(void) {
-    LOG_INF("*** ZOOM OUT ***");
+    LOG_INF("=== STARTING ZOOM OUT SEQUENCE ===");
 
-    int ret = send_zoom_combo_fixed(LCTRL, MINUS, "Ctrl+Minus");
-    if (ret < 0) {
-        LOG_ERR("Zoom out failed: %d", ret);
-    } else {
-        LOG_INF("Zoom out complete");
-    }
+    // Method 1: Ctrl + Minus
+    send_zoom_combo(LCTRL, MINUS, "Ctrl+Minus", 150);
+    k_msleep(100);
+
+    // Method 2: Cmd+Minus for Mac
+    send_zoom_combo(LGUI, MINUS, "Cmd+Minus(Mac)", 150);
+    k_msleep(100);
+
+    // Method 3: Numeric keypad minus
+    send_zoom_combo(LCTRL, KP_MINUS, "Ctrl+NumPad_Minus", 150);
+
+    LOG_INF("=== ZOOM OUT SEQUENCE COMPLETE ===");
 }
 
 // Test functions
 void send_trackpad_f3(void) {
     LOG_INF("*** TRACKPAD F3 TEST ***");
-    send_zoom_combo_fixed(0, F3, "F3_Test");
+    send_zoom_combo(0, F3, "F3_Test", 100);
 }
 
 void send_trackpad_f4(void) {
     LOG_INF("*** TRACKPAD F4 TEST ***");
-    send_zoom_combo_fixed(0, F4, "F4_Test");
+    send_zoom_combo(0, F4, "F4_Test", 100);
 }
