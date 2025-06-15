@@ -138,7 +138,6 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
                 time_since_start, data->fingers[0].strength, data->fingers[1].strength);
     }
 }
-}
 
 void reset_two_finger_state(struct gesture_state *state) {
     if (state->twoFingerActive) {
