@@ -31,9 +31,10 @@ struct gesture_state {
     bool threeFingersPressed;
     int64_t threeFingerPressTime;
     struct {
-        uint16_t x;
-        uint16_t y;
+        int16_t x; // Changed from uint16_t to int16_t
+        int16_t y; // Changed from uint16_t to int16_t
     } threeFingerStartPos[3];
+    bool gestureTriggered; // Added to track if a gesture was triggered
 
     // General state
     uint8_t lastFingerCount;
