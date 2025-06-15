@@ -1,4 +1,4 @@
-// src/three_finger.c - Updated with correct ZMK event syntax
+// src/three_finger.c - Updated with correct pointer syntax
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -31,8 +31,8 @@ static void send_f3_key_direct(void) {
         .timestamp = k_uptime_get()
     };
 
-    // Raise the event using proper macro
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(keycode_event));
+    // Raise the event using proper macro with pointer
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&keycode_event));
 
     // Short delay then release
     k_msleep(50);
@@ -40,7 +40,7 @@ static void send_f3_key_direct(void) {
     keycode_event.state = false;
     keycode_event.timestamp = k_uptime_get();
 
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(keycode_event));
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&keycode_event));
     LOG_INF("F3 key sent successfully");
 }
 
@@ -55,8 +55,8 @@ static void send_f4_key_direct(void) {
         .timestamp = k_uptime_get()
     };
 
-    // Raise the event using proper macro
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(keycode_event));
+    // Raise the event using proper macro with pointer
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&keycode_event));
 
     // Short delay then release
     k_msleep(50);
@@ -64,7 +64,7 @@ static void send_f4_key_direct(void) {
     keycode_event.state = false;
     keycode_event.timestamp = k_uptime_get();
 
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(keycode_event));
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&keycode_event));
     LOG_INF("F4 key sent successfully");
 }
 
