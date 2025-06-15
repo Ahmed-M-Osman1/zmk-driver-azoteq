@@ -1,223 +1,171 @@
-// src/trackpad.c - Simplified with ZMK keys
-#include <zephyr/device.h>
-#include <zephyr/init.h>
-#include <zephyr/drivers/sensor.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/devicetree.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <dt-bindings/zmk/keys.h>
 #include <zmk/hid.h>
 #include <zmk/endpoints.h>
-#include "iqs5xx.h"
+#include <math.h>
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-static struct gesture_state g_gesture_state = {0};
-static const struct device *trackpad;
-static const struct device *trackpad_device = NULL;
-static int event_count = 0;
+// Global cooldown to prevent gesture re-triggering
+static int64_t global_gesture_cooldown = 0;
 
-// Send keyboard keys using ZMK's HID system directly (simplified)
-void send_keyboard_key(uint16_t keycode) {
-    LOG_INF("Sending keyboard key: %d", keycode);
-
-    uint32_t zmk_keycode;
-
-    // Map input codes to ZMK key constants
-    switch(keycode) {
-        case INPUT_KEY_F3:
-            zmk_keycode = F3;
-            break;
-        case INPUT_KEY_F4:
-            zmk_keycode = F4;
-            break;
-        default:
-            LOG_WRN("Unknown keycode: %d", keycode);
-            return;
+// Calculate average Y position of fingers
+static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_count) {
+    float sum = 0;
+    for (int i = 0; i < finger_count && i < 3; i++) {
+        sum += data->fingers[i].ay;
     }
+    return sum / finger_count;
+}
 
-    // Use ZMK's HID keyboard system directly
-    zmk_hid_keyboard_press(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
+// Send F3 key using ZMK's HID system directly - Fixed version
+static void send_f3_key_direct(void) {
+    LOG_INF("*** SENDING F3 KEY DIRECTLY ***");
+
+    // Use ZMK's HID keyboard system with F3 constant
+    int ret1 = zmk_hid_keyboard_press(F3);
+    LOG_INF("F3 press: %d", ret1);
+
+    int ret2 = zmk_endpoints_send_report(0x07);
+    LOG_INF("F3 report: %d", ret2);
 
     // Short delay then release
     k_msleep(50);
 
-    zmk_hid_keyboard_release(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
+    int ret3 = zmk_hid_keyboard_release(F3);
+    LOG_INF("F3 release: %d", ret3);
 
-    LOG_INF("Key sent successfully via HID");
+    int ret4 = zmk_endpoints_send_report(0x07);
+    LOG_INF("F3 final report: %d", ret4);
+
+    LOG_INF("F3 sequence complete - Mission Control should appear!");
 }
 
-void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
-    LOG_INF("Sending keyboard combo: mod=%d, key=%d", modifier, keycode);
+// Send F4 key using ZMK's HID system directly - Fixed version
+static void send_f4_key_direct(void) {
+    LOG_INF("*** SENDING F4 KEY DIRECTLY ***");
 
-    uint32_t zmk_modifier, zmk_keycode;
+    // Use ZMK's HID keyboard system with F4 constant
+    int ret1 = zmk_hid_keyboard_press(F4);
+    LOG_INF("F4 press: %d", ret1);
 
-    // Map modifier
-    switch(modifier) {
-        case INPUT_KEY_LEFTCTRL:
-            zmk_modifier = LCTRL;
-            break;
-        default:
-            LOG_WRN("Unknown modifier: %d", modifier);
-            return;
-    }
+    int ret2 = zmk_endpoints_send_report(0x07);
+    LOG_INF("F4 report: %d", ret2);
 
-    // Map keycode
-    switch(keycode) {
-        case INPUT_KEY_EQUAL:
-            zmk_keycode = EQUAL;
-            break;
-        case INPUT_KEY_MINUS:
-            zmk_keycode = MINUS;
-            break;
-        default:
-            LOG_WRN("Unknown keycode: %d", keycode);
-            return;
-    }
-
-    // Use ZMK's HID keyboard system directly
-    // Press Ctrl
-    zmk_hid_keyboard_press(zmk_modifier);
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
-
-    // Press key
-    zmk_hid_keyboard_press(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
+    // Short delay then release
     k_msleep(50);
 
-    // Release key
-    zmk_hid_keyboard_release(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
+    int ret3 = zmk_hid_keyboard_release(F4);
+    LOG_INF("F4 release: %d", ret3);
 
-    // Release Ctrl
-    zmk_hid_keyboard_release(zmk_modifier);
-    zmk_endpoints_send_report(0x07);
+    int ret4 = zmk_endpoints_send_report(0x07);
+    LOG_INF("F4 final report: %d", ret4);
 
-    LOG_INF("Combo sent successfully via HID");
+    LOG_INF("F4 sequence complete - Launchpad should appear!");
 }
 
-// Keep existing send_input_event for mouse events (unchanged)
-void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
-    event_count++;
-    LOG_INF("INPUT EVENT #%d: type=%d, code=%d, value=%d, sync=%d",
-            event_count, type, code, value, sync);
+void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
+    if (data->finger_count != 3) {
+        return;
+    }
 
-    if (trackpad_device) {
-        int ret = input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
-        if (ret < 0) {
-            LOG_ERR("Failed to send input event: %d", ret);
+    int64_t current_time = k_uptime_get();
+
+    // Check global cooldown - prevent any gesture processing if too recent
+    if (current_time - global_gesture_cooldown < 1000) { // 1 second cooldown
+        LOG_DBG("Three finger gesture in cooldown period");
+        return;
+    }
+
+    // Initialize three finger tracking if just started
+    if (!state->threeFingersPressed) {
+        state->threeFingerPressTime = current_time;
+        state->threeFingersPressed = true;
+
+        // Store initial positions for swipe detection
+        for (int i = 0; i < 3; i++) {
+            state->threeFingerStartPos[i].x = data->fingers[i].ax;
+            state->threeFingerStartPos[i].y = data->fingers[i].ay;
+        }
+
+        LOG_INF("*** THREE FINGERS DETECTED - START ***");
+        LOG_DBG("Initial positions: (%d,%d), (%d,%d), (%d,%d)",
+                state->threeFingerStartPos[0].x, state->threeFingerStartPos[0].y,
+                state->threeFingerStartPos[1].x, state->threeFingerStartPos[1].y,
+                state->threeFingerStartPos[2].x, state->threeFingerStartPos[2].y);
+        return;
+    }
+
+    // Check for three finger swipe gestures - only check after some time has passed
+    int64_t time_since_start = current_time - state->threeFingerPressTime;
+    if (state->threeFingersPressed && time_since_start > 100 && // Wait 100ms before checking swipes
+        data->fingers[0].strength > 0 && data->fingers[1].strength > 0 && data->fingers[2].strength > 0) {
+
+        // Calculate average movement in Y direction
+        float initialAvgY = (float)(state->threeFingerStartPos[0].y +
+                           state->threeFingerStartPos[1].y +
+                           state->threeFingerStartPos[2].y) / 3.0f;
+        float currentAvgY = calculate_average_y(data, 3);
+
+        float yMovement = currentAvgY - initialAvgY;
+
+        LOG_DBG("Three finger Y movement: initial_avg=%d, current_avg=%d, movement=%d",
+                (int)initialAvgY, (int)currentAvgY, (int)yMovement);
+
+        // Detect significant upward movement (swipe up)
+        if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
+            LOG_INF("*** THREE FINGER SWIPE UP -> F3 KEY (MISSION CONTROL) ***");
+
+            // Use the direct HID method
+            send_f3_key_direct();
+
+            // Set global cooldown and reset state
+            global_gesture_cooldown = current_time;
+            state->threeFingersPressed = false;
+
+            LOG_INF("F3 gesture complete - cooldown active");
+            return;
+        }
+
+        // Detect significant downward movement (swipe down)
+        if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
+            LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY (LAUNCHPAD) ***");
+
+            // Use the direct HID method
+            send_f4_key_direct();
+
+            // Set global cooldown and reset state
+            global_gesture_cooldown = current_time;
+            state->threeFingersPressed = false;
+
+            LOG_INF("F4 gesture complete - cooldown active");
+            return;
+        }
+    }
+}
+
+void reset_three_finger_state(struct gesture_state *state) {
+    // Handle three finger click (if fingers released quickly without swipe)
+    if (state->threeFingersPressed &&
+        k_uptime_get() - state->threeFingerPressTime < TRACKPAD_THREE_FINGER_CLICK_TIME) {
+
+        // Check if we're in gesture cooldown (don't do click if gesture just happened)
+        if (k_uptime_get() - global_gesture_cooldown > 500) {
+            LOG_INF("*** THREE FINGER CLICK -> MIDDLE CLICK ***");
+            // Middle click via input event (mouse events still use input system)
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
         } else {
-            LOG_DBG("Input event sent successfully");
-        }
-    } else {
-        LOG_ERR("Trackpad device is NULL - cannot send input events");
-    }
-}
-
-static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
-    static int trigger_count = 0;
-
-    trigger_count++;
-    LOG_DBG("=== TRIGGER #%d ===", trigger_count);
-    LOG_INF("Raw data: fingers=%d, gestures0=0x%02x, gestures1=0x%02x, rx=%d, ry=%d",
-            data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
-
-    for (int i = 0; i < data->finger_count && i < 5; i++) {
-        if (data->fingers[i].strength > 0) {
-            LOG_DBG("Finger %d: pos=(%d,%d), strength=%d, area=%d",
-                    i, data->fingers[i].ax, data->fingers[i].ay,
-                    data->fingers[i].strength, data->fingers[i].area);
+            LOG_DBG("Skipping three finger click - in gesture cooldown");
         }
     }
 
-    if (data->finger_count == 2) {
-        debug_two_finger_positions(data, &g_gesture_state);
-    }
-
-    switch (data->finger_count) {
-        case 0:
-            reset_single_finger_state(&g_gesture_state);
-            reset_two_finger_state(&g_gesture_state);
-            reset_three_finger_state(&g_gesture_state);
-            break;
-
-        case 1:
-            reset_two_finger_state(&g_gesture_state);
-            reset_three_finger_state(&g_gesture_state);
-            handle_single_finger_gestures(dev, data, &g_gesture_state);
-            break;
-
-        case 2:
-            reset_single_finger_state(&g_gesture_state);
-            reset_three_finger_state(&g_gesture_state);
-            handle_two_finger_gestures(dev, data, &g_gesture_state);
-            break;
-
-        case 3:
-            reset_single_finger_state(&g_gesture_state);
-            reset_two_finger_state(&g_gesture_state);
-            handle_three_finger_gestures(dev, data, &g_gesture_state);
-            break;
-
-        default:
-            reset_single_finger_state(&g_gesture_state);
-            reset_two_finger_state(&g_gesture_state);
-            reset_three_finger_state(&g_gesture_state);
-            break;
-    }
-
-    if (g_gesture_state.lastFingerCount != data->finger_count) {
-        LOG_INF("Finger count changed: %d -> %d",
-                g_gesture_state.lastFingerCount, data->finger_count);
-        g_gesture_state.lastFingerCount = data->finger_count;
+    if (state->threeFingersPressed) {
+        state->threeFingersPressed = false;
+        LOG_DBG("Three fingers released");
     }
 }
-
-static int trackpad_init(void) {
-    LOG_INF("=== TRACKPAD GESTURE HANDLER INIT START ===");
-
-    trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
-    if (trackpad == NULL) {
-        LOG_ERR("Failed to get IQS5XX device");
-        return -EINVAL;
-    }
-    LOG_INF("Found IQS5XX device: %p", trackpad);
-
-    trackpad_device = trackpad;
-    LOG_INF("Set trackpad device reference: %p", trackpad_device);
-
-    // Initialize the keyboard events system
-    int ret = trackpad_keyboard_init(trackpad_device);
-    if (ret < 0) {
-        LOG_ERR("Failed to initialize trackpad keyboard events: %d", ret);
-        return ret;
-    }
-
-    memset(&g_gesture_state, 0, sizeof(g_gesture_state));
-    g_gesture_state.mouseSensitivity = 200;
-    LOG_INF("Initialized gesture state");
-
-    int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
-    if(err) {
-        LOG_ERR("Failed to set trigger handler: %d", err);
-        return -EINVAL;
-    }
-    LOG_INF("Trigger handler set successfully");
-
-    LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
-    LOG_INF("Supported gestures:");
-    LOG_INF("  1 finger: tap (left click), tap-hold (drag), movement");
-    LOG_INF("  2 finger: tap (right click), scroll, zoom (Ctrl+Plus/Minus)");
-    LOG_INF("  3 finger: tap (middle click), swipe up/down (F3/F4)");
-
-    return 0;
-}
-
-SYS_INIT(trackpad_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
