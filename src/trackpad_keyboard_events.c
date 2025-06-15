@@ -10,12 +10,13 @@
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// Virtual key positions for trackpad gestures
-// These should be higher than your actual keyboard matrix
-#define TRACKPAD_GESTURE_F3_POS     100
-#define TRACKPAD_GESTURE_F4_POS     101
-#define TRACKPAD_GESTURE_ZOOM_IN    102
-#define TRACKPAD_GESTURE_ZOOM_OUT   103
+// Virtual key positions for trackpad gestures based on 2x4 matrix
+// Row 0: positions 0,1,2,3 -> physical keys 0,1 + virtual F3,F4
+// Row 1: positions 4,5,6,7 -> physical keys 2,3 + virtual zoom in/out
+#define TRACKPAD_GESTURE_F3_POS     2   // RC(0,2) - F3
+#define TRACKPAD_GESTURE_F4_POS     3   // RC(0,3) - F4
+#define TRACKPAD_GESTURE_ZOOM_IN    6   // RC(1,2) - Zoom in
+#define TRACKPAD_GESTURE_ZOOM_OUT   7   // RC(1,3) - Zoom out
 
 // Function to send a key press/release through ZMK's keymap system
 static int send_trackpad_keycode(uint8_t key_position, bool pressed) {
