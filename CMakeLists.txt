@@ -14,5 +14,6 @@ if(CONFIG_IQS5XX)
       src/two_finger.c
       src/three_finger.c
       src/debug_helpers.c
+      src/trackpad_keyboard_events.c
     )
 endif()

@@ -3,6 +3,7 @@
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <math.h>
 #include "gesture_handlers.h"
+#include "trackpad_keyboard_events.h"  // NEW INCLUDE
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
@@ -68,8 +69,8 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE UP -> F3 KEY ***");
 
-            // Send F3 key using input system (use correct constant name)
-            send_keyboard_key(INPUT_KEY_F3);
+            // Use the new keyboard event function
+            send_trackpad_f3();
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;
@@ -81,8 +82,8 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY ***");
 
-            // Send F4 key using input system (use correct constant name)
-            send_keyboard_key(INPUT_KEY_F4);
+            // Use the new keyboard event function
+            send_trackpad_f4();
 
             // Reset tracking to prevent repeated triggers
             state->threeFingersPressed = false;

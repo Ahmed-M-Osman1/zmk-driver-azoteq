@@ -4,6 +4,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include "gesture_handlers.h"
+#include "trackpad_keyboard_events.h"  // NEW INCLUDE
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
@@ -80,7 +81,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
-    // Manual zoom detection - now uses keyboard shortcuts with correct constant names
+    // Manual zoom detection - now uses trackpad keyboard events
     if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0 &&
         data->rx == 0 && data->ry == 0) { // Only check zoom when no relative movement
 
@@ -111,13 +112,13 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
                         (int)distanceChange, zoom_steps);
 
                 if (zoom_steps > 0) {
-                    // Zoom IN - Send Ctrl+Plus (use correct constant names)
-                    LOG_INF("ZOOM IN - SENDING CTRL+=");
-                    send_keyboard_combo(INPUT_KEY_LEFTCTRL, INPUT_KEY_EQUAL);
+                    // Zoom IN - Send through trackpad keyboard events
+                    LOG_INF("ZOOM IN - SENDING TRACKPAD ZOOM IN");
+                    send_trackpad_zoom_in();
                 } else {
-                    // Zoom OUT - Send Ctrl+Minus (use correct constant names)
-                    LOG_INF("ZOOM OUT - SENDING CTRL+-");
-                    send_keyboard_combo(INPUT_KEY_LEFTCTRL, INPUT_KEY_MINUS);
+                    // Zoom OUT - Send through trackpad keyboard events
+                    LOG_INF("ZOOM OUT - SENDING TRACKPAD ZOOM OUT");
+                    send_trackpad_zoom_out();
                 }
 
                 // Update start positions to prevent continuous zoom
