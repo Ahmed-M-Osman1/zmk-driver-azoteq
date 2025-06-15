@@ -81,7 +81,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
-    // Manual pinch-to-zoom with simple flag-based approach (SIMPLE & RELIABLE)
+    // Ultra-simple pinch-to-zoom with ONE ZOOM PER GESTURE (FINAL FIX)
     if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0) {
 
         // Calculate current distance between fingers
@@ -98,54 +98,43 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
         float totalDistanceChange = currentDistance - initialDistance;
 
-        // Simple flag-based zoom tracking (static to persist between calls)
-        static bool zoom_in_progress = false;
-        static float last_zoom_distance = 0;
-        static int64_t last_zoom_time = 0;
+        // Ultra-simple one-shot zoom (static to persist between calls)
+        static bool zoom_triggered_this_gesture = false;
 
         // Reset when starting new two-finger gesture
         if (!state->twoFingerActive) {
-            zoom_in_progress = false;
-            last_zoom_distance = 0;
-            last_zoom_time = 0;
-            LOG_DBG("Reset zoom flags: new gesture started");
+            zoom_triggered_this_gesture = false;
+            LOG_DBG("Reset zoom: new gesture started");
         }
 
-        LOG_DBG("Zoom check: total_change=%.1f, in_progress=%d, last_distance=%.1f",
-                (double)totalDistanceChange, zoom_in_progress, (double)last_zoom_distance);
+        LOG_DBG("Zoom check: total_change=%.1f, already_triggered=%d",
+                (double)totalDistanceChange, zoom_triggered_this_gesture);
 
-        // Only send zoom if significant movement AND enough time has passed
-        int64_t current_time = k_uptime_get();
-        float movement_since_last = fabsf(totalDistanceChange - last_zoom_distance);
+        // Only zoom ONCE per gesture when significant movement detected
+        if (!zoom_triggered_this_gesture && fabsf(totalDistanceChange) > 80) {
 
-        if (movement_since_last > ZOOM_SENSITIVITY && // 40 pixels since last zoom
-            (current_time - last_zoom_time > 150)) {   // 150ms since last zoom
-
-            if (totalDistanceChange > last_zoom_distance + 10) {
+            if (totalDistanceChange > 0) {
                 // Pinch OUT = Zoom IN
-                LOG_INF("*** SIMPLE ZOOM: PINCH OUT -> ZOOM IN (change=%.1f) ***",
+                LOG_INF("*** ONE-SHOT ZOOM: PINCH OUT -> ZOOM IN (change=%.1f) ***",
                         (double)totalDistanceChange);
                 send_trackpad_zoom_in();
-            } else if (totalDistanceChange < last_zoom_distance - 10) {
+            } else {
                 // Pinch IN = Zoom OUT
-                LOG_INF("*** SIMPLE ZOOM: PINCH IN -> ZOOM OUT (change=%.1f) ***",
+                LOG_INF("*** ONE-SHOT ZOOM: PINCH IN -> ZOOM OUT (change=%.1f) ***",
                         (double)totalDistanceChange);
                 send_trackpad_zoom_out();
             }
 
-            // Update tracking
-            last_zoom_distance = totalDistanceChange;
-            last_zoom_time = current_time;
-            zoom_in_progress = true;
-
-            LOG_INF("Zoom sent: last_distance=%.1f", (double)last_zoom_distance);
+            // Mark this gesture as completed - NO MORE ZOOM until next gesture
+            zoom_triggered_this_gesture = true;
+            LOG_INF("Zoom triggered - BLOCKED until next gesture");
         }
     }
 }
 
 void reset_two_finger_state(struct gesture_state *state) {
     if (state->twoFingerActive) {
-        LOG_DBG("Resetting two finger state - zoom flags will reset on next gesture");
+        LOG_DBG("Resetting two finger state - zoom flag will reset on next gesture");
         state->twoFingerActive = false;
     }
 
