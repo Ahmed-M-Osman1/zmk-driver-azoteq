@@ -1,4 +1,4 @@
-// src/three_finger.c - Fixed ZMK API calls
+// src/three_finger.c - Simple test version with better logging
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -19,42 +19,54 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// Send F3 key using ZMK HID directly - Fixed version
+// Send F3 key using ZMK's HID system directly - Test version with more info
 static void send_f3_key_direct(void) {
     LOG_INF("*** SENDING F3 KEY DIRECTLY ***");
+    LOG_INF("Before F3 press - about to call zmk_hid_keyboard_press");
 
     // Use ZMK's HID keyboard system directly
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F3);
+    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F3);
+    LOG_INF("zmk_hid_keyboard_press returned: %d", ret1);
 
-    // Send report with correct usage page (0x07 for keyboard)
-    zmk_endpoints_send_report(0x07);
+    int ret2 = zmk_endpoints_send_report(0x07);
+    LOG_INF("zmk_endpoints_send_report(0x07) returned: %d", ret2);
 
     // Short delay then release
-    k_msleep(50);
+    k_msleep(100); // Increased delay for testing
 
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F3);
-    zmk_endpoints_send_report(0x07);
+    LOG_INF("About to release F3 key");
+    int ret3 = zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F3);
+    LOG_INF("zmk_hid_keyboard_release returned: %d", ret3);
 
-    LOG_INF("F3 key sent successfully via HID");
+    int ret4 = zmk_endpoints_send_report(0x07);
+    LOG_INF("zmk_endpoints_send_report(0x07) release returned: %d", ret4);
+
+    LOG_INF("F3 key sequence completed - check Mac for Mission Control!");
 }
 
-// Send F4 key using ZMK HID directly - Fixed version
+// Send F4 key using ZMK's HID system directly - Test version with more info
 static void send_f4_key_direct(void) {
     LOG_INF("*** SENDING F4 KEY DIRECTLY ***");
+    LOG_INF("Before F4 press - about to call zmk_hid_keyboard_press");
 
     // Use ZMK's HID keyboard system directly
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F4);
+    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F4);
+    LOG_INF("zmk_hid_keyboard_press returned: %d", ret1);
 
-    // Send report with correct usage page (0x01 for keyboard)
-    zmk_endpoints_send_report(0x07);
+    int ret2 = zmk_endpoints_send_report(0x07);
+    LOG_INF("zmk_endpoints_send_report(0x07) returned: %d", ret2);
 
     // Short delay then release
-    k_msleep(50);
+    k_msleep(100); // Increased delay for testing
 
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F4);
-    zmk_endpoints_send_report(0x07);
+    LOG_INF("About to release F4 key");
+    int ret3 = zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F4);
+    LOG_INF("zmk_hid_keyboard_release returned: %d", ret3);
 
-    LOG_INF("F4 key sent successfully via HID");
+    int ret4 = zmk_endpoints_send_report(0x07);
+    LOG_INF("zmk_endpoints_send_report(0x07) release returned: %d", ret4);
+
+    LOG_INF("F4 key sequence completed - check Mac for Launchpad!");
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
@@ -108,9 +120,10 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
         // Detect significant upward movement (swipe up)
         if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
-            LOG_INF("*** THREE FINGER SWIPE UP -> F3 KEY ***");
+            LOG_INF("*** THREE FINGER SWIPE UP -> F3 KEY (MISSION CONTROL) ***");
+            LOG_INF("=== LOOK FOR MISSION CONTROL TO APPEAR ON MAC ===");
 
-            // Use only the direct HID method
+            // Use the direct HID method
             send_f3_key_direct();
 
             // Reset tracking to prevent repeated triggers
@@ -121,9 +134,10 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
         // Detect significant downward movement (swipe down)
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
-            LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY ***");
+            LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY (LAUNCHPAD) ***");
+            LOG_INF("=== LOOK FOR LAUNCHPAD TO APPEAR ON MAC ===");
 
-            // Use only the direct HID method
+            // Use the direct HID method
             send_f4_key_direct();
 
             // Reset tracking to prevent repeated triggers

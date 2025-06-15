@@ -1,4 +1,4 @@
-// src/trackpad_keyboard_events.c - Fixed ZMK API calls
+// src/trackpad_keyboard_events.c - Fixed to use Consumer HID page for F3/F4
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -15,45 +15,43 @@ int trackpad_keyboard_init(const struct device *input_dev) {
     return 0;
 }
 
-// Send F3 key using ZMK's HID system directly - Fixed version
+// Send F3 key using ZMK's Consumer HID system (for Mac Mission Control)
 void send_trackpad_f3(void) {
-    LOG_INF("*** TRACKPAD F3 KEY ***");
+    LOG_INF("*** TRACKPAD F3 KEY (CONSUMER) ***");
 
-    // Use ZMK's HID keyboard system directly
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F3);
-
-    // Send report with correct usage page (0x01 for keyboard)
-    zmk_endpoints_send_report(0x07);
+    // Use ZMK's Consumer HID system for F3 (Mission Control on Mac)
+    // F3 on Mac is typically Mission Control which is a consumer key
+    zmk_hid_consumer_press(0x29D); // Mission Control consumer code
+    zmk_endpoints_send_report(0x0c); // Consumer usage page
 
     // Short delay then release
     k_msleep(50);
 
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F3);
-    zmk_endpoints_send_report(0x07);
+    zmk_hid_consumer_release(0x29D);
+    zmk_endpoints_send_report(0x0c);
 
-    LOG_INF("F3 key sent via HID");
+    LOG_INF("F3 key sent via Consumer HID");
 }
 
-// Send F4 key using ZMK's HID system directly - Fixed version
+// Send F4 key using ZMK's Consumer HID system (for Mac Launchpad)
 void send_trackpad_f4(void) {
-    LOG_INF("*** TRACKPAD F4 KEY ***");
+    LOG_INF("*** TRACKPAD F4 KEY (CONSUMER) ***");
 
-    // Use ZMK's HID keyboard system directly
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F4);
-
-    // Send report with correct usage page (0x01 for keyboard)
-    zmk_endpoints_send_report(0x07);
+    // Use ZMK's Consumer HID system for F4 (Launchpad on Mac)
+    // F4 on Mac is typically Launchpad which is a consumer key
+    zmk_hid_consumer_press(0x2A2); // Launchpad consumer code
+    zmk_endpoints_send_report(0x0c); // Consumer usage page
 
     // Short delay then release
     k_msleep(50);
 
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F4);
-    zmk_endpoints_send_report(0x07);
+    zmk_hid_consumer_release(0x2A2);
+    zmk_endpoints_send_report(0x0c);
 
-    LOG_INF("F4 key sent via HID");
+    LOG_INF("F4 key sent via Consumer HID");
 }
 
-// Send zoom in (Ctrl+Plus) - Fixed version
+// Send zoom in (Ctrl+Plus) - Keep using keyboard HID
 void send_trackpad_zoom_in(void) {
     LOG_INF("*** TRACKPAD ZOOM IN ***");
 
@@ -76,10 +74,10 @@ void send_trackpad_zoom_in(void) {
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
     zmk_endpoints_send_report(0x07);
 
-    LOG_INF("Zoom in sent via HID");
+    LOG_INF("Zoom in sent via Keyboard HID");
 }
 
-// Send zoom out (Ctrl+Minus) - Fixed version
+// Send zoom out (Ctrl+Minus) - Keep using keyboard HID
 void send_trackpad_zoom_out(void) {
     LOG_INF("*** TRACKPAD ZOOM OUT ***");
 
@@ -102,5 +100,5 @@ void send_trackpad_zoom_out(void) {
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
     zmk_endpoints_send_report(0x07);
 
-    LOG_INF("Zoom out sent via HID");
+    LOG_INF("Zoom out sent via Keyboard HID");
 }

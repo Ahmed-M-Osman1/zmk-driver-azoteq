@@ -1,4 +1,4 @@
-// src/trackpad.c - Simplified using only working ZMK HID functions
+// src/trackpad.c - Simplified using ZMK's kp behavior for F3/F4
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -6,8 +6,8 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <zmk/hid.h>
-#include <zmk/endpoints.h>
+#include <zmk/keymap.h>
+#include <zmk/behavior.h>
 #include "iqs5xx.h"
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
@@ -19,13 +19,13 @@ static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 
-// Send keyboard keys using ZMK's HID system directly (simplified)
+// Send keyboard keys using ZMK's keymap behavior system
 void send_keyboard_key(uint16_t keycode) {
     LOG_INF("Sending keyboard key: %d", keycode);
 
     uint32_t zmk_keycode;
 
-    // Map input codes to ZMK keycodes
+    // Map input codes to ZMK keycodes (use F3/F4 directly)
     switch(keycode) {
         case INPUT_KEY_F3:
             zmk_keycode = HID_USAGE_KEY_KEYBOARD_F3;
@@ -38,17 +38,29 @@ void send_keyboard_key(uint16_t keycode) {
             return;
     }
 
-    // Use ZMK's HID keyboard system directly (same as trackpad_keyboard_events.c)
-    zmk_hid_keyboard_press(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
+    // Create a key press binding for the behavior system
+    struct zmk_behavior_binding binding = {
+        .behavior_dev = "kp",  // key press behavior
+        .param1 = zmk_keycode,
+        .param2 = 0
+    };
 
-    // Short delay then release
+    // Send key press
+    int ret = zmk_behavior_binding_pressed(&binding, &binding);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key press: %d", ret);
+        return;
+    }
+
+    // Schedule key release after short delay
     k_msleep(50);
 
-    zmk_hid_keyboard_release(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
-
-    LOG_INF("Key sent successfully via HID");
+    ret = zmk_behavior_binding_released(&binding, &binding);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key release: %d", ret);
+    } else {
+        LOG_INF("Key sent successfully via behavior system");
+    }
 }
 
 void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
@@ -56,7 +68,7 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
 
     uint32_t zmk_modifier, zmk_keycode;
 
-    // Map modifier
+    // Map modifier and keycode
     switch(modifier) {
         case INPUT_KEY_LEFTCTRL:
             zmk_modifier = HID_USAGE_KEY_KEYBOARD_LEFTCONTROL;
@@ -66,7 +78,6 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
             return;
     }
 
-    // Map keycode
     switch(keycode) {
         case INPUT_KEY_EQUAL:
             zmk_keycode = HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS;
@@ -79,27 +90,45 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
             return;
     }
 
-    // Use ZMK's HID keyboard system directly (same as trackpad_keyboard_events.c)
-    // Press Ctrl
-    zmk_hid_keyboard_press(zmk_modifier);
-    zmk_endpoints_send_report(0x07);
+    // Create bindings for modifier and key
+    struct zmk_behavior_binding mod_binding = {
+        .behavior_dev = "kp",
+        .param1 = zmk_modifier,
+        .param2 = 0
+    };
+
+    struct zmk_behavior_binding key_binding = {
+        .behavior_dev = "kp",
+        .param1 = zmk_keycode,
+        .param2 = 0
+    };
+
+    // Send modifier press
+    int ret = zmk_behavior_binding_pressed(&mod_binding, &mod_binding);
+    if (ret < 0) {
+        LOG_ERR("Failed to send modifier press: %d", ret);
+        return;
+    }
+
     k_msleep(10);
 
-    // Press key
-    zmk_hid_keyboard_press(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
+    // Send key press
+    ret = zmk_behavior_binding_pressed(&key_binding, &key_binding);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key press: %d", ret);
+        goto release_mod;
+    }
+
     k_msleep(50);
 
-    // Release key
-    zmk_hid_keyboard_release(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
+    // Release key then modifier
+    zmk_behavior_binding_released(&key_binding, &key_binding);
     k_msleep(10);
 
-    // Release Ctrl
-    zmk_hid_keyboard_release(zmk_modifier);
-    zmk_endpoints_send_report(0x07);
+release_mod:
+    zmk_behavior_binding_released(&mod_binding, &mod_binding);
 
-    LOG_INF("Combo sent successfully via HID");
+    LOG_INF("Combo sent successfully via behavior system");
 }
 
 // Keep existing send_input_event for mouse events (unchanged)
