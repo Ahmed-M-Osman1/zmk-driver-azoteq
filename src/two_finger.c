@@ -69,8 +69,8 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
                 return; // Don't check zoom during scroll
 
             case GESTURE_ZOOM:
-                LOG_INF("*** HARDWARE ZOOM DETECTED ***");
-                // Let manual zoom detection handle it below
+                LOG_INF("*** HARDWARE ZOOM DETECTED - IGNORING (using manual detection) ***");
+                // Ignore hardware zoom, use manual detection for better control
                 break;
 
             default:
@@ -81,16 +81,12 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
-    // Manual pinch-to-zoom detection with cooldown (FIXED)
-    if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0 &&
-        data->rx == 0 && data->ry == 0) { // Only check zoom when no relative movement
+    // Manual pinch-to-zoom with distance-based steps (SMOOTH ZOOM)
+    if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0) {
 
-        // Check if enough time has passed since last zoom (prevent rapid-fire)
-        int64_t current_time = k_uptime_get();
-        static int64_t last_zoom_time = 0;
-        if (current_time - last_zoom_time < 300) { // 300ms cooldown between zooms
-            LOG_DBG("Zoom blocked by cooldown: %lld ms remaining",
-                    300 - (current_time - last_zoom_time));
+        // Only process zoom when fingers are relatively stable
+        if (abs(data->rx) > 2 || abs(data->ry) > 2) {
+            LOG_DBG("Zoom blocked: fingers moving too fast (rx=%d, ry=%d)", data->rx, data->ry);
             return;
         }
 
@@ -106,32 +102,49 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             state->twoFingerStartPos[1].x, state->twoFingerStartPos[1].y
         );
 
-        float distanceChange = currentDistance - initialDistance;
+        float totalDistanceChange = currentDistance - initialDistance;
 
-        LOG_DBG("Pinch check: initial=%.1f, current=%.1f, change=%.1f",
-                (double)initialDistance, (double)currentDistance, (double)distanceChange);
+        // Track zoom steps already sent (static to persist between calls)
+        static int zoom_steps_sent = 0;
+        static float last_tracked_distance = 0;
 
-        // Only trigger zoom if change is significant (increased threshold)
-        if (fabsf(distanceChange) > (ZOOM_THRESHOLD * 2)) { // Double the threshold
-            LOG_INF("*** PINCH-TO-ZOOM: distance_change=%.1f ***",
-                    (double)distanceChange);
+        // Reset tracking when starting new two-finger gesture
+        if (!state->twoFingerActive || fabsf(last_tracked_distance - initialDistance) > 50) {
+            zoom_steps_sent = 0;
+            last_tracked_distance = initialDistance;
+            LOG_DBG("Reset zoom tracking: initial_distance=%.1f", (double)initialDistance);
+        }
 
-            if (distanceChange > 0) {
-                // Pinch OUT = Zoom IN
-                LOG_INF("PINCH OUT -> ZOOM IN");
-                send_trackpad_zoom_in();
-            } else {
-                // Pinch IN = Zoom OUT
-                LOG_INF("PINCH IN -> ZOOM OUT");
-                send_trackpad_zoom_out();
+        // Calculate how many zoom steps we should have sent based on total movement
+        int target_zoom_steps = (int)(totalDistanceChange / ZOOM_SENSITIVITY);
+        int steps_to_send = target_zoom_steps - zoom_steps_sent;
+
+        LOG_DBG("Zoom calc: total_change=%.1f, target_steps=%d, sent=%d, to_send=%d",
+                (double)totalDistanceChange, target_zoom_steps, zoom_steps_sent, steps_to_send);
+
+        // Send zoom commands if we have steps to send
+        if (steps_to_send != 0) {
+            // Limit to max 3 steps per trigger to prevent overwhelming
+            int actual_steps = (steps_to_send > 0) ?
+                              (steps_to_send > 3 ? 3 : steps_to_send) :
+                              (steps_to_send < -3 ? -3 : steps_to_send);
+
+            for (int i = 0; i < abs(actual_steps); i++) {
+                if (actual_steps > 0) {
+                    LOG_INF("*** ZOOM STEP %d: PINCH OUT -> ZOOM IN ***", zoom_steps_sent + i + 1);
+                    send_trackpad_zoom_in();
+                } else {
+                    LOG_INF("*** ZOOM STEP %d: PINCH IN -> ZOOM OUT ***", zoom_steps_sent - i - 1);
+                    send_trackpad_zoom_out();
+                }
+
+                // Small delay between steps to prevent overwhelming HID
+                k_msleep(50);
             }
 
-            // Update cooldown and reset positions
-            last_zoom_time = current_time;
-            state->twoFingerStartPos[0].x = data->fingers[0].ax;
-            state->twoFingerStartPos[0].y = data->fingers[0].ay;
-            state->twoFingerStartPos[1].x = data->fingers[1].ax;
-            state->twoFingerStartPos[1].y = data->fingers[1].ay;
+            zoom_steps_sent += actual_steps;
+            LOG_INF("Zoom steps sent: %d (total change: %.1f pixels)",
+                    zoom_steps_sent, (double)totalDistanceChange);
         }
     }
 }
@@ -140,6 +153,9 @@ void reset_two_finger_state(struct gesture_state *state) {
     if (state->twoFingerActive) {
         LOG_DBG("Resetting two finger state");
         state->twoFingerActive = false;
+
+        // Reset zoom step tracking (external variables)
+        // This will be reset in the main function when twoFingerActive becomes false
     }
 
     if (state->lastXScrollReport != 0) {
