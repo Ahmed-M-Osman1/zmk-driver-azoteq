@@ -16,7 +16,7 @@ struct zoom_state {
     bool zoom_command_sent;
     int64_t session_start_time;
     int stable_readings;
-    int64_t last_trigger_time;  // Add timing for stability
+    int64_t last_trigger_time;
 };
 
 static struct zoom_state zoom = {0};
@@ -93,13 +93,13 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             (int)distance_change, (int)distance_delta, zoom.stable_readings);
 
     // FIXED: Reduced wait time from 200ms to 150ms
-    if (time_since_start < 150) {
+    if (time_since_start < 100) {
         LOG_INF("Waiting for stabilization (%lld/150 ms)", time_since_start);
         return;
     }
 
     // FIXED: Lower strength requirement from 2000 to 1500
-    if (data->fingers[0].strength < 1500 || data->fingers[1].strength < 1500) {
+    if (data->fingers[0].strength < 1000 || data->fingers[1].strength < 1000) {
         LOG_INF("Insufficient strength: F0=%d, F1=%d (need >1500)",
                 data->fingers[0].strength, data->fingers[1].strength);
         return;
@@ -123,7 +123,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
         // FIXED: Reduced stability requirement from 2 to 1 stable reading
         // OR if we have a big distance change (>300px), send immediately
-        if (zoom.stable_readings >= 1 || fabsf(distance_change) > 300.0f) {
+        if (zoom.stable_readings >= 1 || fabsf(distance_change) > 100.0f) {
             LOG_INF("*** ZOOM COMMAND READY - SENDING NOW ***");
             LOG_INF("Stability: %d readings, Distance change: %d px",
                     zoom.stable_readings, (int)distance_change);
