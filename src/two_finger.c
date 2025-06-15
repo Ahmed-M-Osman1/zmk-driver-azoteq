@@ -8,9 +8,18 @@
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// Ultra-simple zoom state - GLOBAL to persist across all calls
+// Gesture type tracking
+typedef enum {
+    TWO_FINGER_NONE = 0,
+    TWO_FINGER_TAP,
+    TWO_FINGER_SCROLL,
+    TWO_FINGER_ZOOM
+} two_finger_gesture_type_t;
+
+// Global state for zoom
 static bool zoom_already_triggered = false;
 static float initial_gesture_distance = 0.0f;
+static two_finger_gesture_type_t current_gesture_type = TWO_FINGER_NONE;
 
 // Calculate distance between two points
 static float calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
@@ -29,14 +38,15 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         state->twoFingerActive = true;
         state->twoFingerStartTime = k_uptime_get();
 
-        // Store initial positions for zoom detection
+        // Store initial positions
         state->twoFingerStartPos[0].x = data->fingers[0].ax;
         state->twoFingerStartPos[0].y = data->fingers[0].ay;
         state->twoFingerStartPos[1].x = data->fingers[1].ax;
         state->twoFingerStartPos[1].y = data->fingers[1].ay;
 
-        // CRITICAL: Reset zoom state for new gesture
+        // Reset all state
         zoom_already_triggered = false;
+        current_gesture_type = TWO_FINGER_NONE;
         initial_gesture_distance = calculate_distance(
             data->fingers[0].ax, data->fingers[0].ay,
             data->fingers[1].ax, data->fingers[1].ay
@@ -45,109 +55,113 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         LOG_INF("Two finger gesture started at positions (%d,%d) and (%d,%d)",
                 state->twoFingerStartPos[0].x, state->twoFingerStartPos[0].y,
                 state->twoFingerStartPos[1].x, state->twoFingerStartPos[1].y);
-        LOG_DBG("Initial distance: %.1f, zoom reset", (double)initial_gesture_distance);
+        LOG_DBG("Initial distance: %.1f, all gestures reset", (double)initial_gesture_distance);
         return;
     }
 
-    // PRIORITY 1: Handle hardware tap gesture (right click) - IMMEDIATE response
-    if (data->gestures1 & GESTURE_TWO_FINGER_TAP) {
+    int64_t time_since_start = k_uptime_get() - state->twoFingerStartTime;
+
+    // STEP 1: Check for immediate tap gesture (highest priority)
+    if (data->gestures1 & GESTURE_TWO_FINGER_TAP && current_gesture_type == TWO_FINGER_NONE) {
         LOG_INF("*** TWO FINGER TAP -> RIGHT CLICK ***");
         send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
         send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
-
-        // Block zoom for this gesture since user just tapped
-        zoom_already_triggered = true;
-        LOG_DBG("Blocking zoom: two-finger tap detected");
+        current_gesture_type = TWO_FINGER_TAP;
         return;
     }
 
-    // PRIORITY 2: Handle scrolling - takes priority over zoom
+    // STEP 2: Check for scroll gesture
     if (data->gestures1 & GESTURE_SCROLLG) {
-        state->lastXScrollReport += data->rx;
-        int8_t pan = -data->ry;
-        int8_t scroll = 0;
+        // Only switch to scroll if we haven't committed to zoom yet
+        if (current_gesture_type == TWO_FINGER_NONE || current_gesture_type == TWO_FINGER_SCROLL) {
+            current_gesture_type = TWO_FINGER_SCROLL;
 
-        if (abs(state->lastXScrollReport) - (int16_t)SCROLL_REPORT_DISTANCE > 0) {
-            scroll = state->lastXScrollReport >= 0 ? 1 : -1;
-            state->lastXScrollReport = 0;
-        }
+            state->lastXScrollReport += data->rx;
+            int8_t pan = -data->ry;
+            int8_t scroll = 0;
 
-        LOG_DBG("Scroll: pan=%d, scroll=%d (rx=%d, ry=%d)",
-                pan, scroll, data->rx, data->ry);
-
-        if (pan != 0) {
-            send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, pan, false);
-        }
-        if (scroll != 0) {
-            send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, scroll, true);
-        }
-
-        // Block zoom during scroll
-        zoom_already_triggered = true;
-        LOG_DBG("Blocking zoom: scrolling detected");
-        return;
-    }
-
-    // PRIORITY 3: Handle hardware zoom (ignore but log)
-    if (data->gestures1 & GESTURE_ZOOM) {
-        LOG_DBG("Hardware zoom ignored - using manual detection");
-        // Don't return here - still allow manual zoom detection
-    }
-
-    // PRIORITY 4: Manual zoom detection - only if no other gestures active
-    // Wait at least 200ms after gesture start to avoid tap interference
-    int64_t time_since_start = k_uptime_get() - state->twoFingerStartTime;
-    if (time_since_start > 200 && // Wait longer to avoid tap conflicts
-        !zoom_already_triggered &&
-        data->fingers[0].strength > 1000 && // Higher threshold for zoom
-        data->fingers[1].strength > 1000) {
-
-        // Calculate current distance
-        float current_distance = calculate_distance(
-            data->fingers[0].ax, data->fingers[0].ay,
-            data->fingers[1].ax, data->fingers[1].ay
-        );
-
-        float distance_change = current_distance - initial_gesture_distance;
-
-        LOG_DBG("Zoom check: time=%lld, initial=%.1f, current=%.1f, change=%.1f, triggered=%d",
-                time_since_start, (double)initial_gesture_distance, (double)current_distance,
-                (double)distance_change, zoom_already_triggered);
-
-        // TRIGGER: Significant deliberate movement (120px threshold)
-        if (fabsf(distance_change) > 120.0f) {
-
-            if (distance_change > 0) {
-                // Fingers moving apart = ZOOM IN
-                LOG_INF("*** ZOOM IN: Pinch apart (%.1f px) after %lld ms ***",
-                        (double)distance_change, time_since_start);
-                send_trackpad_zoom_in();
-            } else {
-                // Fingers moving together = ZOOM OUT
-                LOG_INF("*** ZOOM OUT: Pinch together (%.1f px) after %lld ms ***",
-                        (double)distance_change, time_since_start);
-                send_trackpad_zoom_out();
+            if (abs(state->lastXScrollReport) >= SCROLL_REPORT_DISTANCE) {
+                scroll = state->lastXScrollReport >= 0 ? 1 : -1;
+                state->lastXScrollReport = 0;
             }
 
-            // BLOCK all future zoom for this gesture
-            zoom_already_triggered = true;
-            LOG_INF("Zoom LOCKED - no more zoom until fingers lift");
+            LOG_DBG("Scroll: pan=%d, scroll=%d (rx=%d, ry=%d)",
+                    pan, scroll, data->rx, data->ry);
+
+            if (pan != 0) {
+                send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, pan, false);
+            }
+            if (scroll != 0) {
+                send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, scroll, true);
+            }
+            return;
+        } else {
+            LOG_DBG("Ignoring scroll - already committed to %s",
+                    current_gesture_type == TWO_FINGER_ZOOM ? "zoom" : "other");
         }
-    } else if (!zoom_already_triggered) {
-        LOG_DBG("Zoom waiting: time=%lld/200ms, strength=%d/%d",
-                time_since_start, data->fingers[0].strength, data->fingers[1].strength);
+    }
+
+    // STEP 3: Check for zoom gesture (only if no other gesture active)
+    if (current_gesture_type == TWO_FINGER_NONE || current_gesture_type == TWO_FINGER_ZOOM) {
+
+        // Wait for deliberate movement and strong contact
+        if (time_since_start > 300 && // Wait longer to distinguish from tap/scroll
+            !zoom_already_triggered &&
+            data->fingers[0].strength > 2500 && // Higher thresholds
+            data->fingers[1].strength > 2500) {
+
+            float current_distance = calculate_distance(
+                data->fingers[0].ax, data->fingers[0].ay,
+                data->fingers[1].ax, data->fingers[1].ay
+            );
+
+            float distance_change = current_distance - initial_gesture_distance;
+
+            LOG_DBG("Zoom check: time=%lld, type=%d, initial=%.1f, current=%.1f, change=%.1f",
+                    time_since_start, current_gesture_type, (double)initial_gesture_distance,
+                    (double)current_distance, (double)distance_change);
+
+            // Very high threshold for deliberate zoom
+            if (fabsf(distance_change) > 150.0f) {
+                current_gesture_type = TWO_FINGER_ZOOM;
+
+                if (distance_change > 0) {
+                    LOG_INF("*** ZOOM IN: Pinch apart (%.1f px) after %lld ms ***",
+                            (double)distance_change, time_since_start);
+                    send_trackpad_zoom_in();
+                } else {
+                    LOG_INF("*** ZOOM OUT: Pinch together (%.1f px) after %lld ms ***",
+                            (double)distance_change, time_since_start);
+                    send_trackpad_zoom_out();
+                }
+
+                zoom_already_triggered = true;
+                LOG_INF("Zoom gesture committed - no more gestures until fingers lift");
+            } else {
+                LOG_DBG("Zoom pending: change=%.1f/150px threshold", (double)distance_change);
+            }
+        } else {
+            LOG_DBG("Zoom waiting: time=%lld/300ms, strength=%d/%d, triggered=%d",
+                    time_since_start, data->fingers[0].strength, data->fingers[1].strength, zoom_already_triggered);
+        }
+    }
+
+    // Log hardware zoom detection but don't act on it
+    if (data->gestures1 & GESTURE_ZOOM) {
+        LOG_DBG("Hardware zoom detected but ignored (gesture_type=%d)", current_gesture_type);
     }
 }
 
 void reset_two_finger_state(struct gesture_state *state) {
     if (state->twoFingerActive) {
-        LOG_DBG("Resetting two finger state");
+        LOG_DBG("Resetting two finger state (was type %d)", current_gesture_type);
         state->twoFingerActive = false;
 
-        // Reset zoom state when fingers lift
+        // Reset all gesture state
         zoom_already_triggered = false;
         initial_gesture_distance = 0.0f;
-        LOG_DBG("Zoom state reset - ready for next gesture");
+        current_gesture_type = TWO_FINGER_NONE;
+        LOG_DBG("All two finger gesture state reset - ready for next gesture");
     }
 
     if (state->lastXScrollReport != 0) {
