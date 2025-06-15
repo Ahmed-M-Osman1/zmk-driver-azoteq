@@ -16,6 +16,7 @@ struct zoom_state {
     bool zoom_command_sent;
     int64_t session_start_time;
     int stable_readings;
+    int64_t last_trigger_time;  // Add timing for stability
 };
 
 static struct zoom_state zoom = {0};
@@ -56,6 +57,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         zoom.zoom_command_sent = false;
         zoom.session_start_time = current_time;
         zoom.stable_readings = 0;
+        zoom.last_trigger_time = current_time;
 
         LOG_INF("=== TWO FINGER SESSION START ===");
         LOG_INF("Initial positions: F0(%d,%d) F1(%d,%d)",
@@ -78,27 +80,27 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
     // Update last distance
     zoom.last_distance = current_distance;
 
-    // Count stable readings (small changes)
-    if (fabsf(distance_delta) < 5.0f) {
+    // FIXED: More lenient stability detection
+    if (fabsf(distance_delta) < 15.0f) {  // Increased from 5.0f to 15.0f
         zoom.stable_readings++;
     } else {
         zoom.stable_readings = 0;
     }
 
-    // Detailed logging for debugging - FIXED FLOAT FORMATTING
+    // Detailed logging for debugging
     LOG_INF("Time: %lld ms | Dist: init=%d, curr=%d, change=%d, delta=%d | Stable: %d",
             time_since_start, (int)zoom.initial_distance, (int)current_distance,
             (int)distance_change, (int)distance_delta, zoom.stable_readings);
 
-    // Wait for session to stabilize before allowing zoom
-    if (time_since_start < 200) { // Reduced from 500ms to 200ms
-        LOG_INF("Waiting for stabilization (%lld/200 ms)", time_since_start);
+    // FIXED: Reduced wait time from 200ms to 150ms
+    if (time_since_start < 150) {
+        LOG_INF("Waiting for stabilization (%lld/150 ms)", time_since_start);
         return;
     }
 
-    // Require strong finger contact for zoom - LOWERED THRESHOLD
-    if (data->fingers[0].strength < 2000 || data->fingers[1].strength < 2000) {
-        LOG_INF("Insufficient strength: F0=%d, F1=%d (need >2000)",
+    // FIXED: Lower strength requirement from 2000 to 1500
+    if (data->fingers[0].strength < 1500 || data->fingers[1].strength < 1500) {
+        LOG_INF("Insufficient strength: F0=%d, F1=%d (need >1500)",
                 data->fingers[0].strength, data->fingers[1].strength);
         return;
     }
@@ -119,33 +121,29 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             LOG_INF("Distance change: %d px (threshold: 100px)", (int)distance_change);
         }
 
-        // NEW: Lower stability requirement and add more debug
-        if (zoom.stable_readings >= 2) { // Reduced from 3 to 2
+        // FIXED: Reduced stability requirement from 2 to 1 stable reading
+        // OR if we have a big distance change (>300px), send immediately
+        if (zoom.stable_readings >= 1 || fabsf(distance_change) > 300.0f) {
             LOG_INF("*** ZOOM COMMAND READY - SENDING NOW ***");
+            LOG_INF("Stability: %d readings, Distance change: %d px",
+                    zoom.stable_readings, (int)distance_change);
 
             if (distance_change > 0) {
                 LOG_INF("*** ZOOM IN: Fingers moved apart %d px ***", (int)distance_change);
-                LOG_INF("*** SENDING CTRL+PLUS (ZOOM IN) ***");
+                LOG_INF("*** SENDING ZOOM IN COMMANDS ***");
                 send_trackpad_zoom_in();
-
-                // Also try direct input events as backup
-                LOG_INF("*** ALSO SENDING DIRECT SCROLL EVENTS ***");
-                send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, 3, true);  // Scroll up for zoom in
 
             } else {
                 LOG_INF("*** ZOOM OUT: Fingers moved together %d px ***", (int)distance_change);
-                LOG_INF("*** SENDING CTRL+MINUS (ZOOM OUT) ***");
+                LOG_INF("*** SENDING ZOOM OUT COMMANDS ***");
                 send_trackpad_zoom_out();
-
-                // Also try direct input events as backup
-                LOG_INF("*** ALSO SENDING DIRECT SCROLL EVENTS ***");
-                send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, -3, true); // Scroll down for zoom out
             }
 
             zoom.zoom_command_sent = true;
-            LOG_INF("Zoom command sent - session locked until finger lift");
+            LOG_INF("*** ZOOM COMMAND SENT - SESSION LOCKED ***");
+
         } else {
-            LOG_INF("Zoom ready but waiting for stability (%d/2 stable readings)", zoom.stable_readings);
+            LOG_INF("Zoom ready but waiting for stability (%d/1 stable readings)", zoom.stable_readings);
         }
     } else {
         LOG_INF("Distance change %d px below threshold (100px)", (int)distance_change);
