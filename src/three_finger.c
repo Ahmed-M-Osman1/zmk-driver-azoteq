@@ -1,4 +1,4 @@
-// src/three_finger.c - Simplified using ZMK HID directly
+// src/three_finger.c - Fixed API calls
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -25,13 +25,13 @@ static void send_f3_key_direct(void) {
 
     // Use ZMK's HID keyboard system directly
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F3);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     // Short delay then release
     k_msleep(50);
 
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F3);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     LOG_INF("F3 key sent successfully via HID");
 }
@@ -42,13 +42,13 @@ static void send_f4_key_direct(void) {
 
     // Use ZMK's HID keyboard system directly
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F4);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     // Short delay then release
     k_msleep(50);
 
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F4);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     LOG_INF("F4 key sent successfully via HID");
 }

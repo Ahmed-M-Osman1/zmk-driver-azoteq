@@ -1,4 +1,4 @@
-// src/trackpad_keyboard_events.c - Macro-based approach
+// src/trackpad_keyboard_events.c - Fixed API calls
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -21,13 +21,13 @@ void send_trackpad_f3(void) {
 
     // Use ZMK's HID keyboard system directly
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F3);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     // Short delay then release
     k_msleep(50);
 
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F3);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     LOG_INF("F3 key sent via HID");
 }
@@ -38,13 +38,13 @@ void send_trackpad_f4(void) {
 
     // Use ZMK's HID keyboard system directly
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F4);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     // Short delay then release
     k_msleep(50);
 
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F4);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     LOG_INF("F4 key sent via HID");
 }
@@ -54,23 +54,23 @@ void send_trackpad_zoom_in(void) {
     LOG_INF("*** TRACKPAD ZOOM IN ***");
 
     // Press Ctrl
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
-    zmk_endpoints_send_keyboard_report();
+    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
     k_msleep(10);
 
     // Press Equal/Plus
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
     k_msleep(50);
 
     // Release Equal/Plus
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
     k_msleep(10);
 
     // Release Ctrl
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
-    zmk_endpoints_send_keyboard_report();
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     LOG_INF("Zoom in sent via HID");
 }
@@ -80,23 +80,23 @@ void send_trackpad_zoom_out(void) {
     LOG_INF("*** TRACKPAD ZOOM OUT ***");
 
     // Press Ctrl
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
-    zmk_endpoints_send_keyboard_report();
+    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
     k_msleep(10);
 
     // Press Minus
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
     k_msleep(50);
 
     // Release Minus
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE);
-    zmk_endpoints_send_keyboard_report();
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
     k_msleep(10);
 
     // Release Ctrl
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
-    zmk_endpoints_send_keyboard_report();
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    zmk_endpoints_send_report(HID_USAGE_PAGE_KEYBOARD);
 
     LOG_INF("Zoom out sent via HID");
 }
