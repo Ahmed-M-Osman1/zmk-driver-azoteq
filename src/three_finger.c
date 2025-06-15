@@ -1,9 +1,10 @@
-// src/three_finger.c - Updated with direct ZMK events
+// src/three_finger.c - Updated with correct ZMK APIs
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zmk/events/keycode_state_changed.h>
-#include <zmk/hid.h>
+#include <zmk/keymap.h>
+#include <zmk/behavior.h>
 #include <math.h>
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
@@ -19,18 +20,19 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// Send F3 key using ZMK events directly
+// Send F3 key using ZMK behavior system
 static void send_f3_key_direct(void) {
     LOG_INF("*** SENDING F3 KEY DIRECTLY ***");
 
-    // Send key press
-    int ret = ZMK_EVENT_RAISE(new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_F3,
+    // Create a keycode state changed event for F3
+    struct zmk_keycode_state_changed keycode_event = {
+        .keycode = 0x3C, // F3 keycode
         .state = true,
         .timestamp = k_uptime_get()
-    }));
+    };
 
+    // Raise the event
+    int ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, keycode_event);
     if (ret < 0) {
         LOG_ERR("Failed to send F3 press: %d", ret);
         return;
@@ -39,13 +41,10 @@ static void send_f3_key_direct(void) {
     // Short delay then release
     k_msleep(50);
 
-    ret = ZMK_EVENT_RAISE(new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_F3,
-        .state = false,
-        .timestamp = k_uptime_get()
-    }));
+    keycode_event.state = false;
+    keycode_event.timestamp = k_uptime_get();
 
+    ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, keycode_event);
     if (ret < 0) {
         LOG_ERR("Failed to send F3 release: %d", ret);
     } else {
@@ -53,18 +52,19 @@ static void send_f3_key_direct(void) {
     }
 }
 
-// Send F4 key using ZMK events directly
+// Send F4 key using ZMK behavior system
 static void send_f4_key_direct(void) {
     LOG_INF("*** SENDING F4 KEY DIRECTLY ***");
 
-    // Send key press
-    int ret = ZMK_EVENT_RAISE(new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_F4,
+    // Create a keycode state changed event for F4
+    struct zmk_keycode_state_changed keycode_event = {
+        .keycode = 0x3D, // F4 keycode
         .state = true,
         .timestamp = k_uptime_get()
-    }));
+    };
 
+    // Raise the event
+    int ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, keycode_event);
     if (ret < 0) {
         LOG_ERR("Failed to send F4 press: %d", ret);
         return;
@@ -73,13 +73,10 @@ static void send_f4_key_direct(void) {
     // Short delay then release
     k_msleep(50);
 
-    ret = ZMK_EVENT_RAISE(new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_F4,
-        .state = false,
-        .timestamp = k_uptime_get()
-    }));
+    keycode_event.state = false;
+    keycode_event.timestamp = k_uptime_get();
 
+    ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, keycode_event);
     if (ret < 0) {
         LOG_ERR("Failed to send F4 release: %d", ret);
     } else {

@@ -1,223 +1,249 @@
+// src/trackpad.c - Updated for ZMK integration with correct APIs
 #include <zephyr/device.h>
-#include <zephyr/kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/sensor.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/input/input.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zmk/events/keycode_state_changed.h>
-#include <zmk/event_manager.h>
-#include <zmk/hid.h>
-#include <zmk/endpoints.h>
-#include <dt-bindings/zmk/keys.h>
+#include "iqs5xx.h"
+#include "gesture_handlers.h"
+#include "trackpad_keyboard_events.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
-// Work items for key releases
-static struct k_work_delayable f3_release_work;
-static struct k_work_delayable f4_release_work;
-static struct k_work_delayable zoom_in_release_work;
-static struct k_work_delayable zoom_out_release_work;
+static struct gesture_state g_gesture_state = {0};
+static const struct device *trackpad;
+static const struct device *trackpad_device = NULL;
+static int event_count = 0;
 
-// Work callbacks for key releases
-static void f3_release_cb(struct k_work *work) {
-    LOG_INF("F3 key release");
-    struct zmk_keycode_state_changed *release_event = new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_F3,
-        .state = false,
-        .timestamp = k_uptime_get()
-    });
+// Send keyboard keys using ZMK's event system (for trackpad gestures)
+void send_keyboard_key(uint16_t keycode) {
+    LOG_INF("Sending keyboard key: %d", keycode);
 
-    if (release_event) {
-        ZMK_EVENT_RAISE(release_event);
-    }
-}
+    uint8_t hid_keycode;
 
-static void f4_release_cb(struct k_work *work) {
-    LOG_INF("F4 key release");
-    struct zmk_keycode_state_changed *release_event = new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_F4,
-        .state = false,
-        .timestamp = k_uptime_get()
-    });
-
-    if (release_event) {
-        ZMK_EVENT_RAISE(release_event);
-    }
-}
-
-static void zoom_in_modifier_release_cb(struct k_work *work) {
-    LOG_INF("Zoom in combo release");
-
-    // Release EQUAL key first
-    struct zmk_keycode_state_changed *key_release = new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS,
-        .state = false,
-        .timestamp = k_uptime_get()
-    });
-
-    if (key_release) {
-        ZMK_EVENT_RAISE(key_release);
+    // Map input codes to HID usage codes
+    switch(keycode) {
+        case INPUT_KEY_F3:
+            hid_keycode = 0x3C; // F3
+            break;
+        case INPUT_KEY_F4:
+            hid_keycode = 0x3D; // F4
+            break;
+        default:
+            LOG_WRN("Unknown keycode: %d", keycode);
+            return;
     }
 
-    // Then release CTRL
-    k_msleep(10);
-    struct zmk_keycode_state_changed *mod_release = new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL,
-        .state = false,
-        .timestamp = k_uptime_get()
-    });
-
-    if (mod_release) {
-        ZMK_EVENT_RAISE(mod_release);
-    }
-}
-
-static void zoom_out_modifier_release_cb(struct k_work *work) {
-    LOG_INF("Zoom out combo release");
-
-    // Release MINUS key first
-    struct zmk_keycode_state_changed *key_release = new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE,
-        .state = false,
-        .timestamp = k_uptime_get()
-    });
-
-    if (key_release) {
-        ZMK_EVENT_RAISE(key_release);
-    }
-
-    // Then release CTRL
-    k_msleep(10);
-    struct zmk_keycode_state_changed *mod_release = new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL,
-        .state = false,
-        .timestamp = k_uptime_get()
-    });
-
-    if (mod_release) {
-        ZMK_EVENT_RAISE(mod_release);
-    }
-}
-
-// Initialize the keyboard events system
-int trackpad_keyboard_init(const struct device *input_dev) {
-    // Initialize work items for key releases
-    k_work_init_delayable(&f3_release_work, f3_release_cb);
-    k_work_init_delayable(&f4_release_work, f4_release_cb);
-    k_work_init_delayable(&zoom_in_release_work, zoom_in_modifier_release_cb);
-    k_work_init_delayable(&zoom_out_release_work, zoom_out_modifier_release_cb);
-
-    LOG_INF("ZMK trackpad keyboard events initialized");
-    return 0;
-}
-
-// Send a single keycode through ZMK's event system
-static int send_zmk_keycode(uint32_t keycode, struct k_work_delayable *release_work) {
-    LOG_INF("Sending ZMK keycode: %d", keycode);
-
-    // Create and raise key press event
-    struct zmk_keycode_state_changed *press_event = new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = keycode,
+    // Send key press
+    struct zmk_keycode_state_changed press_event = {
+        .keycode = hid_keycode,
         .state = true,
         .timestamp = k_uptime_get()
-    });
+    };
 
-    if (!press_event) {
-        LOG_ERR("Failed to create key press event");
-        return -ENOMEM;
+    int ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, press_event);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key press: %d", ret);
+        return;
     }
 
-    // Raise the event
-    int ret = ZMK_EVENT_RAISE(press_event);
+    // Schedule key release after short delay
+    k_msleep(50);
+
+    press_event.state = false;
+    press_event.timestamp = k_uptime_get();
+    ZMK_EVENT_RAISE(zmk_keycode_state_changed, press_event);
+}
+
+void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
+    LOG_INF("Sending keyboard combo: mod=%d, key=%d", modifier, keycode);
+
+    uint8_t hid_modifier, hid_keycode;
+
+    // Map modifier
+    switch(modifier) {
+        case INPUT_KEY_LEFTCTRL:
+            hid_modifier = 0xE0; // LEFT_CONTROL
+            break;
+        default:
+            LOG_WRN("Unknown modifier: %d", modifier);
+            return;
+    }
+
+    // Map keycode
+    switch(keycode) {
+        case INPUT_KEY_EQUAL:
+            hid_keycode = 0x2E; // EQUAL
+            break;
+        case INPUT_KEY_MINUS:
+            hid_keycode = 0x2D; // MINUS
+            break;
+        default:
+            LOG_WRN("Unknown keycode: %d", keycode);
+            return;
+    }
+
+    // Send modifier press
+    struct zmk_keycode_state_changed mod_event = {
+        .keycode = hid_modifier,
+        .state = true,
+        .timestamp = k_uptime_get()
+    };
+
+    int ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, mod_event);
     if (ret < 0) {
-        LOG_ERR("Failed to raise key press event: %d", ret);
+        LOG_ERR("Failed to send modifier press: %d", ret);
+        return;
+    }
+
+    k_msleep(10);
+
+    // Send key press
+    struct zmk_keycode_state_changed key_event = {
+        .keycode = hid_keycode,
+        .state = true,
+        .timestamp = k_uptime_get()
+    };
+
+    ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, key_event);
+    if (ret < 0) {
+        LOG_ERR("Failed to send key press: %d", ret);
+        return;
+    }
+
+    k_msleep(50);
+
+    // Release key
+    key_event.state = false;
+    key_event.timestamp = k_uptime_get();
+    ZMK_EVENT_RAISE(zmk_keycode_state_changed, key_event);
+
+    k_msleep(10);
+
+    // Release modifier
+    mod_event.state = false;
+    mod_event.timestamp = k_uptime_get();
+    ZMK_EVENT_RAISE(zmk_keycode_state_changed, mod_event);
+}
+
+// Keep existing send_input_event for mouse events (unchanged)
+void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
+    event_count++;
+    LOG_INF("INPUT EVENT #%d: type=%d, code=%d, value=%d, sync=%d",
+            event_count, type, code, value, sync);
+
+    if (trackpad_device) {
+        int ret = input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
+        if (ret < 0) {
+            LOG_ERR("Failed to send input event: %d", ret);
+        } else {
+            LOG_DBG("Input event sent successfully");
+        }
+    } else {
+        LOG_ERR("Trackpad device is NULL - cannot send input events");
+    }
+}
+
+static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
+    static int trigger_count = 0;
+
+    trigger_count++;
+    LOG_DBG("=== TRIGGER #%d ===", trigger_count);
+    LOG_INF("Raw data: fingers=%d, gestures0=0x%02x, gestures1=0x%02x, rx=%d, ry=%d",
+            data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
+
+    for (int i = 0; i < data->finger_count && i < 5; i++) {
+        if (data->fingers[i].strength > 0) {
+            LOG_DBG("Finger %d: pos=(%d,%d), strength=%d, area=%d",
+                    i, data->fingers[i].ax, data->fingers[i].ay,
+                    data->fingers[i].strength, data->fingers[i].area);
+        }
+    }
+
+    if (data->finger_count == 2) {
+        debug_two_finger_positions(data, &g_gesture_state);
+    }
+
+    switch (data->finger_count) {
+        case 0:
+            reset_single_finger_state(&g_gesture_state);
+            reset_two_finger_state(&g_gesture_state);
+            reset_three_finger_state(&g_gesture_state);
+            break;
+
+        case 1:
+            reset_two_finger_state(&g_gesture_state);
+            reset_three_finger_state(&g_gesture_state);
+            handle_single_finger_gestures(dev, data, &g_gesture_state);
+            break;
+
+        case 2:
+            reset_single_finger_state(&g_gesture_state);
+            reset_three_finger_state(&g_gesture_state);
+            handle_two_finger_gestures(dev, data, &g_gesture_state);
+            break;
+
+        case 3:
+            reset_single_finger_state(&g_gesture_state);
+            reset_two_finger_state(&g_gesture_state);
+            handle_three_finger_gestures(dev, data, &g_gesture_state);
+            break;
+
+        default:
+            reset_single_finger_state(&g_gesture_state);
+            reset_two_finger_state(&g_gesture_state);
+            reset_three_finger_state(&g_gesture_state);
+            break;
+    }
+
+    if (g_gesture_state.lastFingerCount != data->finger_count) {
+        LOG_INF("Finger count changed: %d -> %d",
+                g_gesture_state.lastFingerCount, data->finger_count);
+        g_gesture_state.lastFingerCount = data->finger_count;
+    }
+}
+
+static int trackpad_init(void) {
+    LOG_INF("=== TRACKPAD GESTURE HANDLER INIT START ===");
+
+    trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
+    if (trackpad == NULL) {
+        LOG_ERR("Failed to get IQS5XX device");
+        return -EINVAL;
+    }
+    LOG_INF("Found IQS5XX device: %p", trackpad);
+
+    trackpad_device = trackpad;
+    LOG_INF("Set trackpad device reference: %p", trackpad_device);
+
+    // Initialize the keyboard events system
+    int ret = trackpad_keyboard_init(trackpad_device);
+    if (ret < 0) {
+        LOG_ERR("Failed to initialize trackpad keyboard events: %d", ret);
         return ret;
     }
 
-    // Schedule key release
-    k_work_schedule(release_work, K_MSEC(50));
+    memset(&g_gesture_state, 0, sizeof(g_gesture_state));
+    g_gesture_state.mouseSensitivity = 200;
+    LOG_INF("Initialized gesture state");
 
-    LOG_DBG("ZMK keycode sent successfully");
+    int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
+    if(err) {
+        LOG_ERR("Failed to set trigger handler: %d", err);
+        return -EINVAL;
+    }
+    LOG_INF("Trigger handler set successfully");
+
+    LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
+    LOG_INF("Supported gestures:");
+    LOG_INF("  1 finger: tap (left click), tap-hold (drag), movement");
+    LOG_INF("  2 finger: tap (right click), scroll, zoom (Ctrl+Plus/Minus)");
+    LOG_INF("  3 finger: tap (middle click), swipe up/down (F3/F4)");
+
     return 0;
 }
 
-// Send combination keys through ZMK's event system
-static int send_zmk_combo(uint32_t modifier, uint32_t keycode, struct k_work_delayable *release_work) {
-    LOG_INF("Sending ZMK combo: mod=%d, key=%d", modifier, keycode);
-
-    // Create and raise modifier press event
-    struct zmk_keycode_state_changed *mod_press = new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = modifier,
-        .state = true,
-        .timestamp = k_uptime_get()
-    });
-
-    if (!mod_press) {
-        LOG_ERR("Failed to create modifier press event");
-        return -ENOMEM;
-    }
-
-    int ret = ZMK_EVENT_RAISE(mod_press);
-    if (ret < 0) {
-        LOG_ERR("Failed to raise modifier press: %d", ret);
-        return ret;
-    }
-
-    // Small delay before key
-    k_msleep(10);
-
-    // Create and raise key press event
-    struct zmk_keycode_state_changed *key_press = new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
-        .usage_page = HID_USAGE_PAGE_KEYBOARD,
-        .keycode = keycode,
-        .state = true,
-        .timestamp = k_uptime_get()
-    });
-
-    if (!key_press) {
-        LOG_ERR("Failed to create key press event");
-        return -ENOMEM;
-    }
-
-    ret = ZMK_EVENT_RAISE(key_press);
-    if (ret < 0) {
-        LOG_ERR("Failed to raise key press: %d", ret);
-        return ret;
-    }
-
-    // Schedule combination release
-    k_work_schedule(release_work, K_MSEC(100));
-
-    LOG_DBG("ZMK combo sent successfully");
-    return 0;
-}
-
-// Public functions for trackpad gestures using ZMK events
-void send_trackpad_f3(void) {
-    LOG_INF("*** TRACKPAD F3 KEY ***");
-    send_zmk_keycode(HID_USAGE_KEY_KEYBOARD_F3, &f3_release_work);
-}
-
-void send_trackpad_f4(void) {
-    LOG_INF("*** TRACKPAD F4 KEY ***");
-    send_zmk_keycode(HID_USAGE_KEY_KEYBOARD_F4, &f4_release_work);
-}
-
-void send_trackpad_zoom_in(void) {
-    LOG_INF("*** TRACKPAD ZOOM IN ***");
-    send_zmk_combo(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL,
-                   HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS,
-                   &zoom_in_release_work);
-}
-
-void send_trackpad_zoom_out(void) {
-    LOG_INF("*** TRACKPAD ZOOM OUT ***");
-    send_zmk_combo(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL,
-                   HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE,
-                   &zoom_out_release_work);
-}
+SYS_INIT(trackpad_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
