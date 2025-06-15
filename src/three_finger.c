@@ -1,4 +1,4 @@
-// src/three_finger.c - Simple version using ZMK's F3/F4 constants
+// src/three_finger.c - Fixed with proper cooldown to prevent key sticking
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -11,6 +11,9 @@
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
+// Global cooldown to prevent gesture re-triggering
+static int64_t global_gesture_cooldown = 0;
+
 // Calculate average Y position of fingers
 static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_count) {
     float sum = 0;
@@ -20,54 +23,50 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// Send F3 key using ZMK's HID system directly - Test version with more info
+// Send F3 key using ZMK's HID system directly - Fixed version
 static void send_f3_key_direct(void) {
     LOG_INF("*** SENDING F3 KEY DIRECTLY ***");
-    LOG_INF("Before F3 press - about to call zmk_hid_keyboard_press");
 
     // Use ZMK's HID keyboard system with F3 constant
     int ret1 = zmk_hid_keyboard_press(F3);
-    LOG_INF("zmk_hid_keyboard_press(F3) returned: %d", ret1);
+    LOG_INF("F3 press: %d", ret1);
 
     int ret2 = zmk_endpoints_send_report(0x07);
-    LOG_INF("zmk_endpoints_send_report(0x07) returned: %d", ret2);
+    LOG_INF("F3 report: %d", ret2);
 
     // Short delay then release
-    k_msleep(100); // Increased delay for testing
+    k_msleep(50);
 
-    LOG_INF("About to release F3 key");
     int ret3 = zmk_hid_keyboard_release(F3);
-    LOG_INF("zmk_hid_keyboard_release(F3) returned: %d", ret3);
+    LOG_INF("F3 release: %d", ret3);
 
     int ret4 = zmk_endpoints_send_report(0x07);
-    LOG_INF("zmk_endpoints_send_report(0x07) release returned: %d", ret4);
+    LOG_INF("F3 final report: %d", ret4);
 
-    LOG_INF("F3 key sequence completed - check Mac for Mission Control!");
+    LOG_INF("F3 sequence complete - Mission Control should appear!");
 }
 
-// Send F4 key using ZMK's HID system directly - Test version with more info
+// Send F4 key using ZMK's HID system directly - Fixed version
 static void send_f4_key_direct(void) {
     LOG_INF("*** SENDING F4 KEY DIRECTLY ***");
-    LOG_INF("Before F4 press - about to call zmk_hid_keyboard_press");
 
     // Use ZMK's HID keyboard system with F4 constant
     int ret1 = zmk_hid_keyboard_press(F4);
-    LOG_INF("zmk_hid_keyboard_press(F4) returned: %d", ret1);
+    LOG_INF("F4 press: %d", ret1);
 
     int ret2 = zmk_endpoints_send_report(0x07);
-    LOG_INF("zmk_endpoints_send_report(0x07) returned: %d", ret2);
+    LOG_INF("F4 report: %d", ret2);
 
     // Short delay then release
-    k_msleep(100); // Increased delay for testing
+    k_msleep(50);
 
-    LOG_INF("About to release F4 key");
     int ret3 = zmk_hid_keyboard_release(F4);
-    LOG_INF("zmk_hid_keyboard_release(F4) returned: %d", ret3);
+    LOG_INF("F4 release: %d", ret3);
 
     int ret4 = zmk_endpoints_send_report(0x07);
-    LOG_INF("zmk_endpoints_send_report(0x07) release returned: %d", ret4);
+    LOG_INF("F4 final report: %d", ret4);
 
-    LOG_INF("F4 key sequence completed - check Mac for Launchpad!");
+    LOG_INF("F4 sequence complete - Launchpad should appear!");
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
@@ -75,9 +74,17 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         return;
     }
 
+    int64_t current_time = k_uptime_get();
+
+    // Check global cooldown - prevent any gesture processing if too recent
+    if (current_time - global_gesture_cooldown < 1000) { // 1 second cooldown
+        LOG_DBG("Three finger gesture in cooldown period");
+        return;
+    }
+
     // Initialize three finger tracking if just started
     if (!state->threeFingersPressed) {
-        state->threeFingerPressTime = k_uptime_get();
+        state->threeFingerPressTime = current_time;
         state->threeFingersPressed = true;
 
         // Store initial positions for swipe detection
@@ -95,7 +102,7 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
     }
 
     // Check for three finger swipe gestures - only check after some time has passed
-    int64_t time_since_start = k_uptime_get() - state->threeFingerPressTime;
+    int64_t time_since_start = current_time - state->threeFingerPressTime;
     if (state->threeFingersPressed && time_since_start > 100 && // Wait 100ms before checking swipes
         data->fingers[0].strength > 0 && data->fingers[1].strength > 0 && data->fingers[2].strength > 0) {
 
@@ -110,40 +117,33 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         LOG_DBG("Three finger Y movement: initial_avg=%d, current_avg=%d, movement=%d",
                 (int)initialAvgY, (int)currentAvgY, (int)yMovement);
 
-        // Only trigger if movement is significant AND we haven't triggered recently
-        static int64_t last_swipe_time = 0;
-        int64_t current_time = k_uptime_get();
-
-        // Prevent rapid re-triggering (500ms cooldown)
-        if (current_time - last_swipe_time < 500) {
-            return;
-        }
-
         // Detect significant upward movement (swipe up)
         if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE UP -> F3 KEY (MISSION CONTROL) ***");
-            LOG_INF("=== LOOK FOR MISSION CONTROL TO APPEAR ON MAC ===");
 
             // Use the direct HID method
             send_f3_key_direct();
 
-            // Reset tracking to prevent repeated triggers
+            // Set global cooldown and reset state
+            global_gesture_cooldown = current_time;
             state->threeFingersPressed = false;
-            last_swipe_time = current_time;
+
+            LOG_INF("F3 gesture complete - cooldown active");
             return;
         }
 
         // Detect significant downward movement (swipe down)
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY (LAUNCHPAD) ***");
-            LOG_INF("=== LOOK FOR LAUNCHPAD TO APPEAR ON MAC ===");
 
             // Use the direct HID method
             send_f4_key_direct();
 
-            // Reset tracking to prevent repeated triggers
+            // Set global cooldown and reset state
+            global_gesture_cooldown = current_time;
             state->threeFingersPressed = false;
-            last_swipe_time = current_time;
+
+            LOG_INF("F4 gesture complete - cooldown active");
             return;
         }
     }
@@ -153,14 +153,20 @@ void reset_three_finger_state(struct gesture_state *state) {
     // Handle three finger click (if fingers released quickly without swipe)
     if (state->threeFingersPressed &&
         k_uptime_get() - state->threeFingerPressTime < TRACKPAD_THREE_FINGER_CLICK_TIME) {
-        LOG_INF("*** THREE FINGER CLICK -> MIDDLE CLICK ***");
-        // Middle click via input event (mouse events still use input system)
-        send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
-        send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
+
+        // Check if we're in gesture cooldown (don't do click if gesture just happened)
+        if (k_uptime_get() - global_gesture_cooldown > 500) {
+            LOG_INF("*** THREE FINGER CLICK -> MIDDLE CLICK ***");
+            // Middle click via input event (mouse events still use input system)
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
+        } else {
+            LOG_DBG("Skipping three finger click - in gesture cooldown");
+        }
     }
 
     if (state->threeFingersPressed) {
         state->threeFingersPressed = false;
-        LOG_INF("*** THREE FINGERS RELEASED ***");
+        LOG_DBG("Three fingers released");
     }
 }
