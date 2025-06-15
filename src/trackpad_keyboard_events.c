@@ -1,4 +1,4 @@
-// src/trackpad_keyboard_events.c - FIXED to properly release keys
+// src/trackpad_keyboard_events.c - IMPROVED VERSION with multiple zoom options
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -6,6 +6,7 @@
 #include <zmk/behavior.h>
 #include <zmk/hid.h>
 #include <zmk/endpoints.h>
+#include <dt-bindings/zmk/keys.h>
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
@@ -15,140 +16,118 @@ int trackpad_keyboard_init(const struct device *input_dev) {
     return 0;
 }
 
-// Send F3 key using ZMK's keyboard HID system (FIXED VERSION)
-void send_trackpad_f3(void) {
-    LOG_INF("*** TRACKPAD F3 KEY ***");
-
-    // Clear any existing state first
+// Helper function to clear and wait
+static void clear_and_wait(int ms) {
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(0x07);
-    k_msleep(10);
-
-    // Press F3
-    int ret1 = zmk_hid_keyboard_press(F3);
-    if (ret1 < 0) {
-        LOG_ERR("Failed to press F3: %d", ret1);
-        return;
-    }
-    zmk_endpoints_send_report(0x07);
-    k_msleep(50); // Hold key briefly
-
-    // Release F3
-    int ret2 = zmk_hid_keyboard_release(F3);
-    if (ret2 < 0) {
-        LOG_ERR("Failed to release F3: %d", ret2);
-    }
-    zmk_endpoints_send_report(0x07);
-
-    LOG_INF("F3 key sent and released successfully");
+    k_msleep(ms);
 }
 
-// Send F4 key using ZMK's keyboard HID system (FIXED VERSION)
-void send_trackpad_f4(void) {
-    LOG_INF("*** TRACKPAD F4 KEY ***");
+// Helper function to send key combination
+static int send_key_combo(uint8_t modifier, uint8_t key, const char* description) {
+    LOG_INF("Sending %s: mod=0x%02x, key=0x%02x", description, modifier, key);
 
-    // Clear any existing state first
-    zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
+    clear_and_wait(10);
 
-    // Press F4
-    int ret1 = zmk_hid_keyboard_press(F4);
+    // Press modifier
+    int ret1 = zmk_hid_keyboard_press(modifier);
     if (ret1 < 0) {
-        LOG_ERR("Failed to press F4: %d", ret1);
-        return;
+        LOG_ERR("Failed to press modifier: %d", ret1);
+        return ret1;
     }
     zmk_endpoints_send_report(0x07);
-    k_msleep(50); // Hold key briefly
+    k_msleep(20);
 
-    // Release F4
-    int ret2 = zmk_hid_keyboard_release(F4);
+    // Press main key
+    int ret2 = zmk_hid_keyboard_press(key);
     if (ret2 < 0) {
-        LOG_ERR("Failed to release F4: %d", ret2);
+        LOG_ERR("Failed to press key: %d", ret2);
+        zmk_hid_keyboard_clear();
+        zmk_endpoints_send_report(0x07);
+        return ret2;
     }
     zmk_endpoints_send_report(0x07);
+    k_msleep(100); // Hold longer
 
-    LOG_INF("F4 key sent and released successfully");
+    // Release main key
+    zmk_hid_keyboard_release(key);
+    zmk_endpoints_send_report(0x07);
+    k_msleep(20);
+
+    // Release modifier
+    zmk_hid_keyboard_release(modifier);
+    zmk_endpoints_send_report(0x07);
+    k_msleep(20);
+
+    clear_and_wait(10);
+
+    LOG_INF("%s completed successfully", description);
+    return 0;
 }
 
-// Send zoom in (Ctrl+Plus) - IMPROVED ERROR HANDLING
+// ZOOM IN - Try multiple methods
 void send_trackpad_zoom_in(void) {
-    LOG_INF("*** TRACKPAD ZOOM IN ***");
+    LOG_INF("*** TRACKPAD ZOOM IN - TRYING MULTIPLE METHODS ***");
 
-    // Clear any existing state first
+    // Method 1: Ctrl+Plus (most common)
+    LOG_INF("Method 1: Ctrl+Equal (Plus)");
+    send_key_combo(LCTRL, EQUAL, "Ctrl+Plus");
+    k_msleep(50);
+
+    // Method 2: Ctrl+Shift+Plus (some systems)
+    LOG_INF("Method 2: Ctrl+Shift+Equal");
+    clear_and_wait(10);
+    zmk_hid_keyboard_press(LCTRL);
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+    zmk_hid_keyboard_press(LSHIFT);
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+    zmk_hid_keyboard_press(EQUAL);
+    zmk_endpoints_send_report(0x07);
+    k_msleep(100);
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
-
-    // Press Ctrl
-    int ret1 = zmk_hid_keyboard_press(LCTRL);
-    if (ret1 < 0) {
-        LOG_ERR("Failed to press CTRL: %d", ret1);
-        return;
-    }
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
-
-    // Press Equal/Plus
-    int ret2 = zmk_hid_keyboard_press(EQUAL);
-    if (ret2 < 0) {
-        LOG_ERR("Failed to press EQUAL: %d", ret2);
-        zmk_hid_keyboard_release(LCTRL);
-        zmk_endpoints_send_report(0x07);
-        return;
-    }
     zmk_endpoints_send_report(0x07);
     k_msleep(50);
 
-    // Release Equal/Plus
-    zmk_hid_keyboard_release(EQUAL);
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
+    // Method 3: Cmd+Plus (Mac)
+    LOG_INF("Method 3: Cmd+Equal (Mac style)");
+    send_key_combo(LGUI, EQUAL, "Cmd+Plus");
+    k_msleep(50);
 
-    // Release Ctrl
-    zmk_hid_keyboard_release(LCTRL);
-    zmk_endpoints_send_report(0x07);
-
-    LOG_INF("Zoom in sent successfully");
+    LOG_INF("All zoom in methods completed");
 }
 
-// Send zoom out (Ctrl+Minus) - IMPROVED ERROR HANDLING
+// ZOOM OUT - Try multiple methods
 void send_trackpad_zoom_out(void) {
-    LOG_INF("*** TRACKPAD ZOOM OUT ***");
+    LOG_INF("*** TRACKPAD ZOOM OUT - TRYING MULTIPLE METHODS ***");
 
-    // Clear any existing state first
-    zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
-
-    // Press Ctrl
-    int ret1 = zmk_hid_keyboard_press(LCTRL);
-    if (ret1 < 0) {
-        LOG_ERR("Failed to press CTRL: %d", ret1);
-        return;
-    }
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
-
-    // Press Minus
-    int ret2 = zmk_hid_keyboard_press(MINUS);
-    if (ret2 < 0) {
-        LOG_ERR("Failed to press MINUS: %d", ret2);
-        zmk_hid_keyboard_release(LCTRL);
-        zmk_endpoints_send_report(0x07);
-        return;
-    }
-    zmk_endpoints_send_report(0x07);
+    // Method 1: Ctrl+Minus (most common)
+    LOG_INF("Method 1: Ctrl+Minus");
+    send_key_combo(LCTRL, MINUS, "Ctrl+Minus");
     k_msleep(50);
 
-    // Release Minus
-    zmk_hid_keyboard_release(MINUS);
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
+    // Method 2: Ctrl+0 (reset zoom, some browsers)
+    LOG_INF("Method 2: Ctrl+0 (reset)");
+    send_key_combo(LCTRL, N0, "Ctrl+0");
+    k_msleep(50);
 
-    // Release Ctrl
-    zmk_hid_keyboard_release(LCTRL);
-    zmk_endpoints_send_report(0x07);
+    // Method 3: Cmd+Minus (Mac)
+    LOG_INF("Method 3: Cmd+Minus (Mac style)");
+    send_key_combo(LGUI, MINUS, "Cmd+Minus");
+    k_msleep(50);
 
-    LOG_INF("Zoom out sent successfully");
+    LOG_INF("All zoom out methods completed");
+}
+
+// Test function - send F3 for testing
+void send_trackpad_f3(void) {
+    LOG_INF("*** TRACKPAD F3 TEST ***");
+    send_key_combo(0, F3, "F3 Key Test");
+}
+
+// Test function - send F4 for testing
+void send_trackpad_f4(void) {
+    LOG_INF("*** TRACKPAD F4 TEST ***");
+    send_key_combo(0, F4, "F4 Key Test");
 }

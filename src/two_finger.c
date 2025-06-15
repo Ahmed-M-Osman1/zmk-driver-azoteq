@@ -125,10 +125,21 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
             if (distance_change > 0) {
                 LOG_INF("*** ZOOM IN: Fingers moved apart %d px ***", (int)distance_change);
+                LOG_INF("*** SENDING CTRL+PLUS (ZOOM IN) ***");
                 send_trackpad_zoom_in();
+
+                // Also try direct input events as backup
+                LOG_INF("*** ALSO SENDING DIRECT SCROLL EVENTS ***");
+                send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, 3, true);  // Scroll up for zoom in
+
             } else {
                 LOG_INF("*** ZOOM OUT: Fingers moved together %d px ***", (int)distance_change);
+                LOG_INF("*** SENDING CTRL+MINUS (ZOOM OUT) ***");
                 send_trackpad_zoom_out();
+
+                // Also try direct input events as backup
+                LOG_INF("*** ALSO SENDING DIRECT SCROLL EVENTS ***");
+                send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, -3, true); // Scroll down for zoom out
             }
 
             zoom.zoom_command_sent = true;
