@@ -26,14 +26,14 @@ static void send_f3_key_direct(void) {
     // Use ZMK's HID keyboard system directly
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F3);
 
-    // Send report with correct usage page (0x01 for keyboard)
-    zmk_endpoints_send_report(0x01);
+    // Send report with correct usage page (0x07 for keyboard)
+    zmk_endpoints_send_report(0x07);
 
     // Short delay then release
     k_msleep(50);
 
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F3);
-    zmk_endpoints_send_report(0x01);
+    zmk_endpoints_send_report(0x07);
 
     LOG_INF("F3 key sent successfully via HID");
 }
@@ -46,13 +46,13 @@ static void send_f4_key_direct(void) {
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_F4);
 
     // Send report with correct usage page (0x01 for keyboard)
-    zmk_endpoints_send_report(0x01);
+    zmk_endpoints_send_report(0x07);
 
     // Short delay then release
     k_msleep(50);
 
     zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_F4);
-    zmk_endpoints_send_report(0x01);
+    zmk_endpoints_send_report(0x07);
 
     LOG_INF("F4 key sent successfully via HID");
 }

@@ -40,13 +40,13 @@ void send_keyboard_key(uint16_t keycode) {
 
     // Use ZMK's HID keyboard system directly (same as trackpad_keyboard_events.c)
     zmk_hid_keyboard_press(zmk_keycode);
-    zmk_endpoints_send_report(0x01);
+    zmk_endpoints_send_report(0x07);
 
     // Short delay then release
     k_msleep(50);
 
     zmk_hid_keyboard_release(zmk_keycode);
-    zmk_endpoints_send_report(0x01);
+    zmk_endpoints_send_report(0x07);
 
     LOG_INF("Key sent successfully via HID");
 }
@@ -82,22 +82,22 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     // Use ZMK's HID keyboard system directly (same as trackpad_keyboard_events.c)
     // Press Ctrl
     zmk_hid_keyboard_press(zmk_modifier);
-    zmk_endpoints_send_report(0x01);
+    zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Press key
     zmk_hid_keyboard_press(zmk_keycode);
-    zmk_endpoints_send_report(0x01);
+    zmk_endpoints_send_report(0x07);
     k_msleep(50);
 
     // Release key
     zmk_hid_keyboard_release(zmk_keycode);
-    zmk_endpoints_send_report(0x01);
+    zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Release Ctrl
     zmk_hid_keyboard_release(zmk_modifier);
-    zmk_endpoints_send_report(0x01);
+    zmk_endpoints_send_report(0x07);
 
     LOG_INF("Combo sent successfully via HID");
 }
