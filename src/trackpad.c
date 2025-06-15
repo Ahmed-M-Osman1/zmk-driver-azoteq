@@ -1,4 +1,4 @@
-// src/trackpad.c - Updated for ZMK integration with correct pointer syntax
+// src/trackpad.c - Simplified using ZMK behavior system
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -6,7 +6,8 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <zmk/events/keycode_state_changed.h>
+#include <zmk/keymap.h>
+#include <zmk/behavior.h>
 #include "iqs5xx.h"
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
@@ -18,51 +19,53 @@ static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 
-// Send keyboard keys using ZMK's event system (for trackpad gestures)
+// Send keyboard keys using ZMK's behavior system (for trackpad gestures)
 void send_keyboard_key(uint16_t keycode) {
     LOG_INF("Sending keyboard key: %d", keycode);
 
-    uint8_t hid_keycode;
+    uint8_t zmk_keycode;
 
-    // Map input codes to HID usage codes
+    // Map input codes to ZMK keycodes
     switch(keycode) {
         case INPUT_KEY_F3:
-            hid_keycode = 0x3C; // F3
+            zmk_keycode = 60; // F3 in ZMK
             break;
         case INPUT_KEY_F4:
-            hid_keycode = 0x3D; // F4
+            zmk_keycode = 61; // F4 in ZMK
             break;
         default:
             LOG_WRN("Unknown keycode: %d", keycode);
             return;
     }
 
-    // Send key press using proper ZMK macro with pointer
-    struct zmk_keycode_state_changed press_event = {
-        .keycode = hid_keycode,
-        .state = true,
-        .timestamp = k_uptime_get()
+    // Send key using ZMK behavior system
+    struct zmk_behavior_binding binding = {
+        .behavior_dev = "kp",
+        .param1 = zmk_keycode,
+        .param2 = 0
     };
 
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&press_event));
+    // Send key press
+    int ret = zmk_behavior_queue_add(binding, true, k_uptime_get());
+    if (ret < 0) {
+        LOG_ERR("Failed to send key press: %d", ret);
+        return;
+    }
 
     // Schedule key release after short delay
     k_msleep(50);
-
-    press_event.state = false;
-    press_event.timestamp = k_uptime_get();
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&press_event));
+    zmk_behavior_queue_add(binding, false, k_uptime_get());
 }
 
 void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     LOG_INF("Sending keyboard combo: mod=%d, key=%d", modifier, keycode);
 
-    uint8_t hid_modifier, hid_keycode;
+    uint8_t zmk_modifier, zmk_keycode;
 
     // Map modifier
     switch(modifier) {
         case INPUT_KEY_LEFTCTRL:
-            hid_modifier = 0xE0; // LEFT_CONTROL
+            zmk_modifier = 224; // LEFT_CONTROL in ZMK
             break;
         default:
             LOG_WRN("Unknown modifier: %d", modifier);
@@ -72,10 +75,10 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     // Map keycode
     switch(keycode) {
         case INPUT_KEY_EQUAL:
-            hid_keycode = 0x2E; // EQUAL
+            zmk_keycode = 46; // EQUAL in ZMK
             break;
         case INPUT_KEY_MINUS:
-            hid_keycode = 0x2D; // MINUS
+            zmk_keycode = 45; // MINUS in ZMK
             break;
         default:
             LOG_WRN("Unknown keycode: %d", keycode);
@@ -83,38 +86,29 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     }
 
     // Send modifier press
-    struct zmk_keycode_state_changed mod_event = {
-        .keycode = hid_modifier,
-        .state = true,
-        .timestamp = k_uptime_get()
+    struct zmk_behavior_binding mod_binding = {
+        .behavior_dev = "kp",
+        .param1 = zmk_modifier,
+        .param2 = 0
     };
 
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&mod_event));
-
+    zmk_behavior_queue_add(mod_binding, true, k_uptime_get());
     k_msleep(10);
 
     // Send key press
-    struct zmk_keycode_state_changed key_event = {
-        .keycode = hid_keycode,
-        .state = true,
-        .timestamp = k_uptime_get()
+    struct zmk_behavior_binding key_binding = {
+        .behavior_dev = "kp",
+        .param1 = zmk_keycode,
+        .param2 = 0
     };
 
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&key_event));
-
+    zmk_behavior_queue_add(key_binding, true, k_uptime_get());
     k_msleep(50);
 
-    // Release key
-    key_event.state = false;
-    key_event.timestamp = k_uptime_get();
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&key_event));
-
+    // Release key then modifier
+    zmk_behavior_queue_add(key_binding, false, k_uptime_get());
     k_msleep(10);
-
-    // Release modifier
-    mod_event.state = false;
-    mod_event.timestamp = k_uptime_get();
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&mod_event));
+    zmk_behavior_queue_add(mod_binding, false, k_uptime_get());
 }
 
 // Keep existing send_input_event for mouse events (unchanged)

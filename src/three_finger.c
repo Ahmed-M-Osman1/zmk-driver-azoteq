@@ -1,8 +1,7 @@
-// src/three_finger.c - Updated with correct pointer syntax
+// src/three_finger.c - Simplified using ZMK behavior system
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <zmk/events/keycode_state_changed.h>
 #include <zmk/keymap.h>
 #include <zmk/behavior.h>
 #include <math.h>
@@ -24,48 +23,58 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
 static void send_f3_key_direct(void) {
     LOG_INF("*** SENDING F3 KEY DIRECTLY ***");
 
-    // Create a keycode state changed event for F3
-    struct zmk_keycode_state_changed keycode_event = {
-        .keycode = 0x3C, // F3 keycode
-        .state = true,
-        .timestamp = k_uptime_get()
+    // Use ZMK behavior queue directly
+    struct zmk_behavior_binding binding = {
+        .behavior_dev = "kp",
+        .param1 = 60, // F3 keycode in ZMK
+        .param2 = 0
     };
 
-    // Raise the event using proper macro with pointer
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&keycode_event));
+    // Send key press
+    int ret = zmk_behavior_queue_add(binding, true, k_uptime_get());
+    if (ret < 0) {
+        LOG_ERR("Failed to send F3 press: %d", ret);
+        return;
+    }
 
     // Short delay then release
     k_msleep(50);
 
-    keycode_event.state = false;
-    keycode_event.timestamp = k_uptime_get();
-
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&keycode_event));
-    LOG_INF("F3 key sent successfully");
+    ret = zmk_behavior_queue_add(binding, false, k_uptime_get());
+    if (ret < 0) {
+        LOG_ERR("Failed to send F3 release: %d", ret);
+    } else {
+        LOG_INF("F3 key sent successfully");
+    }
 }
 
 // Send F4 key using ZMK behavior system
 static void send_f4_key_direct(void) {
     LOG_INF("*** SENDING F4 KEY DIRECTLY ***");
 
-    // Create a keycode state changed event for F4
-    struct zmk_keycode_state_changed keycode_event = {
-        .keycode = 0x3D, // F4 keycode
-        .state = true,
-        .timestamp = k_uptime_get()
+    // Use ZMK behavior queue directly
+    struct zmk_behavior_binding binding = {
+        .behavior_dev = "kp",
+        .param1 = 61, // F4 keycode in ZMK
+        .param2 = 0
     };
 
-    // Raise the event using proper macro with pointer
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&keycode_event));
+    // Send key press
+    int ret = zmk_behavior_queue_add(binding, true, k_uptime_get());
+    if (ret < 0) {
+        LOG_ERR("Failed to send F4 press: %d", ret);
+        return;
+    }
 
     // Short delay then release
     k_msleep(50);
 
-    keycode_event.state = false;
-    keycode_event.timestamp = k_uptime_get();
-
-    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(&keycode_event));
-    LOG_INF("F4 key sent successfully");
+    ret = zmk_behavior_queue_add(binding, false, k_uptime_get());
+    if (ret < 0) {
+        LOG_ERR("Failed to send F4 release: %d", ret);
+    } else {
+        LOG_INF("F4 key sent successfully");
+    }
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
