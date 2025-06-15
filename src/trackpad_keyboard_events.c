@@ -1,4 +1,4 @@
-// src/trackpad_keyboard_events.c - OPTIMIZED FOR SPEED
+// src/trackpad_keyboard_events.c - FIXED VERSION
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -16,60 +16,95 @@ int trackpad_keyboard_init(const struct device *input_dev) {
     return 0;
 }
 
-// OPTIMIZED: Much faster zoom with minimal delays
-static int send_zoom_combo_fast(uint8_t modifier, uint8_t key, const char* description) {
-    LOG_INF("*** FAST %s ***", description);
+// FIXED: More reliable zoom with proper error checking
+static int send_zoom_combo_fixed(uint8_t modifier, uint8_t key, const char* description) {
+    LOG_INF("*** %s ***", description);
 
-    // Quick clear
+    // Step 1: Clear everything first
+    int ret = zmk_hid_keyboard_clear();
+    if (ret < 0) {
+        LOG_ERR("Failed to clear keyboard: %d", ret);
+        return ret;
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
+    // Step 2: Press modifier and verify
+    ret = zmk_hid_keyboard_press(modifier);
+    if (ret < 0) {
+        LOG_ERR("Failed to press modifier %d: %d", modifier, ret);
+        return ret;
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(20);  // Slightly longer for modifier
+
+    // Step 3: Press key and verify
+    ret = zmk_hid_keyboard_press(key);
+    if (ret < 0) {
+        LOG_ERR("Failed to press key %d: %d", key, ret);
+        // Try to clean up modifier
+        zmk_hid_keyboard_release(modifier);
+        zmk_endpoints_send_report(0x07);
+        return ret;
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(40);  // Hold the combination
+
+    // Step 4: Release key first
+    ret = zmk_hid_keyboard_release(key);
+    if (ret < 0) {
+        LOG_WRN("Failed to release key %d: %d", key, ret);
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
+    // Step 5: Release modifier
+    ret = zmk_hid_keyboard_release(modifier);
+    if (ret < 0) {
+        LOG_WRN("Failed to release modifier %d: %d", modifier, ret);
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
+    // Step 6: Final clear to ensure clean state
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(0x07);
-    k_msleep(10); // Reduced from 50ms
 
-    // Press modifier
-    zmk_hid_keyboard_press(modifier);
-    zmk_endpoints_send_report(0x07);
-    k_msleep(5); // Reduced from 30ms
-
-    // Press key
-    zmk_hid_keyboard_press(key);
-    zmk_endpoints_send_report(0x07);
-    k_msleep(30); // Reduced from 150ms
-
-    // Quick release
-    zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
-
-    LOG_INF("%s sent", description);
+    LOG_INF("%s completed successfully", description);
     return 0;
 }
 
-// FAST ZOOM IN - Only send the most effective command
+// ZOOM IN with better reliability
 void send_trackpad_zoom_in(void) {
     LOG_INF("*** ZOOM IN ***");
 
-    // Only send Ctrl+Plus - fastest method
-    send_zoom_combo_fast(LCTRL, EQUAL, "Ctrl+Plus");
-
-    LOG_INF("Zoom in complete");
+    int ret = send_zoom_combo_fixed(LCTRL, EQUAL, "Ctrl+Plus");
+    if (ret < 0) {
+        LOG_ERR("Zoom in failed: %d", ret);
+    } else {
+        LOG_INF("Zoom in complete");
+    }
 }
 
-// FAST ZOOM OUT - Only send the most effective command
+// ZOOM OUT with better reliability
 void send_trackpad_zoom_out(void) {
     LOG_INF("*** ZOOM OUT ***");
 
-    // Only send Ctrl+Minus - fastest method
-    send_zoom_combo_fast(LCTRL, MINUS, "Ctrl+Minus");
-
-    LOG_INF("Zoom out complete");
+    int ret = send_zoom_combo_fixed(LCTRL, MINUS, "Ctrl+Minus");
+    if (ret < 0) {
+        LOG_ERR("Zoom out failed: %d", ret);
+    } else {
+        LOG_INF("Zoom out complete");
+    }
 }
 
 // Test functions
 void send_trackpad_f3(void) {
     LOG_INF("*** TRACKPAD F3 TEST ***");
-    send_zoom_combo_fast(0, F3, "F3_Test");
+    send_zoom_combo_fixed(0, F3, "F3_Test");
 }
 
 void send_trackpad_f4(void) {
     LOG_INF("*** TRACKPAD F4 TEST ***");
-    send_zoom_combo_fast(0, F4, "F4_Test");
+    send_zoom_combo_fixed(0, F4, "F4_Test");
 }

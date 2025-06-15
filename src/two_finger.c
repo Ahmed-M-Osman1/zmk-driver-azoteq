@@ -17,6 +17,7 @@ struct zoom_state {
     int64_t session_start_time;
     int stable_readings;
     int64_t last_trigger_time;
+    int64_t last_command_time;  // NEW: Prevent rapid commands
 };
 
 static struct zoom_state zoom = {0};
@@ -41,6 +42,13 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
     }
 
     int64_t current_time = k_uptime_get();
+
+    // FIXED: Prevent rapid commands (500ms minimum between zoom commands)
+    if (zoom.zoom_command_sent && (current_time - zoom.last_command_time < 500)) {
+        LOG_DBG("Zoom command rate limit: %lld ms since last (need 500ms)",
+                current_time - zoom.last_command_time);
+        return;
+    }
 
     // Initialize zoom session if just started
     if (!state->twoFingerActive) {
@@ -80,8 +88,8 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
     // Update last distance
     zoom.last_distance = current_distance;
 
-    // OPTIMIZED: More lenient stability detection
-    if (fabsf(distance_delta) < 20.0f) {  // Increased tolerance
+    // FIXED: More stable detection
+    if (fabsf(distance_delta) < 15.0f) {  // Tighter tolerance for stability
         zoom.stable_readings++;
     } else {
         zoom.stable_readings = 0;
@@ -92,37 +100,41 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             time_since_start, (int)zoom.initial_distance, (int)current_distance,
             (int)distance_change, (int)distance_delta, zoom.stable_readings);
 
-    // OPTIMIZED: Reduced wait time to 100ms (was 150ms)
-    if (time_since_start < 100) {
-        LOG_INF("Waiting for stabilization (%lld/100 ms)", time_since_start);
+    // FIXED: Shorter wait time but with better conditions
+    if (time_since_start < 80) {  // Reduced to 80ms
+        LOG_INF("Waiting for stabilization (%lld/80 ms)", time_since_start);
         return;
     }
 
-    // OPTIMIZED: Lower strength requirement for easier detection
-    if (data->fingers[0].strength < 1000 || data->fingers[1].strength < 1000) {
-        LOG_INF("Insufficient strength: F0=%d, F1=%d (need >1000)",
+    // FIXED: More reasonable strength requirement
+    if (data->fingers[0].strength < 800 || data->fingers[1].strength < 800) {
+        LOG_INF("Insufficient strength: F0=%d, F1=%d (need >800)",
                 data->fingers[0].strength, data->fingers[1].strength);
         return;
     }
 
-    // Only allow one zoom command per session
-    if (zoom.zoom_command_sent) {
-        LOG_DBG("Zoom already sent this session - waiting for finger lift");
+    // FIXED: Check if we already sent a command recently
+    if (zoom.zoom_command_sent && (current_time - zoom.last_command_time < 500)) {
+        LOG_DBG("Zoom command on cooldown - waiting");
         return;
     }
 
-    // OPTIMIZED: Lower zoom threshold for easier activation (was 100px)
-    if (fabsf(distance_change) > 60.0f) {  // Reduced from 100px to 60px
+    // FIXED: Lower threshold but with better logic
+    if (fabsf(distance_change) > 50.0f) {  // 50px threshold
         LOG_INF("*** ZOOM THRESHOLD EXCEEDED: %d px ***", (int)distance_change);
 
         if (!zoom.zoom_session_active) {
             zoom.zoom_session_active = true;
             LOG_INF("*** ZOOM SESSION ACTIVATED ***");
-            LOG_INF("Distance change: %d px (threshold: 60px)", (int)distance_change);
+            LOG_INF("Distance change: %d px (threshold: 50px)", (int)distance_change);
         }
 
-        // OPTIMIZED: No stability requirement OR big distance change trigger
-        if (zoom.stable_readings >= 1 || fabsf(distance_change) > 150.0f || time_since_start > 200) {
+        // FIXED: Simpler trigger logic - either stable OR significant movement
+        bool should_trigger = (zoom.stable_readings >= 2) ||
+                             (fabsf(distance_change) > 100.0f) ||
+                             (time_since_start > 200);
+
+        if (should_trigger && !zoom.zoom_command_sent) {
             LOG_INF("*** ZOOM COMMAND READY - SENDING NOW ***");
             LOG_INF("Stability: %d readings, Distance change: %d px, Time: %lld ms",
                     zoom.stable_readings, (int)distance_change, time_since_start);
@@ -135,15 +147,19 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
                 send_trackpad_zoom_out();
             }
 
+            // FIXED: Proper command tracking
             zoom.zoom_command_sent = true;
-            LOG_INF("*** ZOOM COMMAND SENT - SESSION LOCKED ***");
+            zoom.last_command_time = current_time;
+            LOG_INF("*** ZOOM COMMAND SENT - COOLDOWN ACTIVE ***");
 
+        } else if (zoom.zoom_command_sent) {
+            LOG_DBG("Zoom already sent - in cooldown");
         } else {
             LOG_INF("Zoom ready but waiting (stable: %d, time: %lld ms)",
                     zoom.stable_readings, time_since_start);
         }
     } else {
-        LOG_INF("Distance change %d px below threshold (60px)", (int)distance_change);
+        LOG_INF("Distance change %d px below threshold (50px)", (int)distance_change);
     }
 
     // Show finger positions for debugging
@@ -165,8 +181,12 @@ void reset_two_finger_state(struct gesture_state *state) {
 
         state->twoFingerActive = false;
 
-        // Reset zoom state
-        memset(&zoom, 0, sizeof(zoom));
+        // FIXED: Don't reset the cooldown timer - let it persist between sessions
+        // This prevents rapid zoom commands when lifting/placing fingers
+        zoom.zoom_session_active = false;
+        zoom.zoom_command_sent = false;
+        zoom.stable_readings = 0;
+        // Keep zoom.last_command_time for rate limiting
 
         LOG_INF("Ready for next two-finger session");
     }
