@@ -1,4 +1,3 @@
-// src/three_finger.c - Enhanced with stricter debouncing and logging
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -23,11 +22,11 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// Send F4 key using keyboard event helper
-static void send_f4_key(void) {
-    LOG_INF("*** SENDING F4 KEY ***");
-    send_keyboard_key(INPUT_KEY_F4); // Use INPUT_KEY_F4 for consistency
-    LOG_INF("F4 sequence complete - Launchpad should appear!");
+// Send Control+Up key combination
+static void send_control_up(void) {
+    LOG_INF("*** SENDING CONTROL+UP ***");
+    send_keyboard_combo(INPUT_KEY_LEFTCTRL, INPUT_KEY_UP);
+    LOG_INF("Control+Up sequence complete - Mission Control should appear!");
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
@@ -89,17 +88,17 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
         // Detect significant downward movement (swipe down)
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
-            LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY (LAUNCHPAD) ***");
+            LOG_INF("*** THREE FINGER SWIPE DOWN -> CONTROL+UP ***");
 
-            // Send F4 key
-            send_f4_key();
+            // Send Control+Up
+            send_control_up();
 
             // Mark gesture as complete
             state->gestureTriggered = true;
             global_gesture_cooldown = current_time;
             state->threeFingersPressed = false;
 
-            LOG_INF("F4 gesture complete - cooldown active for 1000ms");
+            LOG_INF("Control+Up gesture complete - cooldown active for 1000ms");
             return;
         }
     }
@@ -116,7 +115,7 @@ void reset_three_finger_state(struct gesture_state *state) {
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
         } else {
-            LOG_DBG("Skipping three finger click - in gesture cooldown");
+            LOG_DBG("Skipping three finger click - in cooldown");
         }
     }
 
