@@ -19,51 +19,51 @@ static int event_count = 0;
 static int consecutive_i2c_errors = 0;
 static int64_t last_error_time = 0;
 
-// NEW: Send consumer control keys (these work better with ZMK)
-void send_consumer_key(uint16_t usage_id) {
+// NEW: Send keyboard keys using existing input system
+void send_special_key(uint16_t keycode) {
     event_count++;
-    LOG_INF("CONSUMER KEY #%d: usage=0x%04x", event_count, usage_id);
+    LOG_INF("SPECIAL KEY #%d: keycode=%d", event_count, keycode);
 
     if (trackpad_device) {
-        // Send consumer control event
-        int ret = input_report(trackpad_device, INPUT_EV_KEY, usage_id, 1, false, K_NO_WAIT);
+        // Send key press
+        int ret = input_report(trackpad_device, INPUT_EV_KEY, keycode, 1, false, K_NO_WAIT);
         if (ret < 0) {
-            LOG_ERR("Failed to send consumer key press: %d", ret);
+            LOG_ERR("Failed to send special key press: %d", ret);
             return;
         }
 
         k_msleep(10);
 
-        ret = input_report(trackpad_device, INPUT_EV_KEY, usage_id, 0, true, K_NO_WAIT);
+        ret = input_report(trackpad_device, INPUT_EV_KEY, keycode, 0, true, K_NO_WAIT);
         if (ret < 0) {
-            LOG_ERR("Failed to send consumer key release: %d", ret);
+            LOG_ERR("Failed to send special key release: %d", ret);
             return;
         }
 
-        LOG_DBG("Consumer key sent successfully");
+        LOG_DBG("Special key sent successfully");
     } else {
-        LOG_ERR("Trackpad device is NULL - cannot send consumer key");
+        LOG_ERR("Trackpad device is NULL - cannot send special key");
     }
 }
 
-// Map gestures to consumer control keys
+// Map gestures to high-numbered keys that are less likely to conflict
 void send_keyboard_key(uint16_t keycode) {
     if (keycode == INPUT_KEY_F3) {
-        // Use consumer control F13 for F3 gesture
-        send_consumer_key(KEY_F13);
+        // Use F13 key (should be available)
+        send_special_key(INPUT_KEY_F13);
     } else if (keycode == INPUT_KEY_F4) {
-        // Use consumer control F14 for F4 gesture
-        send_consumer_key(KEY_F14);
+        // Use F14 key
+        send_special_key(INPUT_KEY_F14);
     }
 }
 
 void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     if (modifier == INPUT_KEY_LEFTCTRL && keycode == INPUT_KEY_EQUAL) {
-        // Use consumer zoom in
-        send_consumer_key(KEY_ZOOMIN);
+        // Use F15 for zoom in
+        send_special_key(INPUT_KEY_F15);
     } else if (modifier == INPUT_KEY_LEFTCTRL && keycode == INPUT_KEY_MINUS) {
-        // Use consumer zoom out
-        send_consumer_key(KEY_ZOOMOUT);
+        // Use F16 for zoom out
+        send_special_key(INPUT_KEY_F16);
     }
 }
 
@@ -174,8 +174,8 @@ static int trackpad_init(void) {
     LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
     LOG_INF("Supported gestures:");
     LOG_INF("  1 finger: tap (left click), tap-hold (drag), movement");
-    LOG_INF("  2 finger: tap (right click), scroll, zoom (F13/F14)");
-    LOG_INF("  3 finger: tap (middle click), swipe up/down (ZOOM keys)");
+    LOG_INF("  2 finger: tap (right click), scroll, zoom (F15/F16)");
+    LOG_INF("  3 finger: tap (middle click), swipe up/down (F13/F14)");
 
     return 0;
 }
