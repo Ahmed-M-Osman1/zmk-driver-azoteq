@@ -6,6 +6,11 @@ if(CONFIG_IQS5XX)
 
     zephyr_library_include_directories(include)
 
+    # Include ZMK headers for proper event integration
+    if(EXISTS ${ZEPHYR_BASE}/../zmk/app/include)
+        zephyr_library_include_directories(${ZEPHYR_BASE}/../zmk/app/include)
+    endif()
+
     zephyr_library_sources(
       src/iqs5xx.c
       src/iqs5xx_regdump.c
@@ -16,4 +21,9 @@ if(CONFIG_IQS5XX)
       src/debug_helpers.c
       src/trackpad_keyboard_events.c
     )
+
+    # Link against ZMK if available
+    if(TARGET zmk)
+        zephyr_library_link_libraries(zmk)
+    endif()
 endif()

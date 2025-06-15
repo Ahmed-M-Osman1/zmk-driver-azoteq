@@ -1,9 +1,12 @@
+// src/three_finger.c - Updated with direct ZMK events
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zmk/events/keycode_state_changed.h>
+#include <zmk/hid.h>
 #include <math.h>
 #include "gesture_handlers.h"
-#include "trackpad_keyboard_events.h"  // NEW INCLUDE
+#include "trackpad_keyboard_events.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
@@ -14,6 +17,74 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
         sum += data->fingers[i].ay;
     }
     return sum / finger_count;
+}
+
+// Send F3 key using ZMK events directly
+static void send_f3_key_direct(void) {
+    LOG_INF("*** SENDING F3 KEY DIRECTLY ***");
+
+    // Send key press
+    int ret = ZMK_EVENT_RAISE(new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
+        .usage_page = HID_USAGE_PAGE_KEYBOARD,
+        .keycode = HID_USAGE_KEY_KEYBOARD_F3,
+        .state = true,
+        .timestamp = k_uptime_get()
+    }));
+
+    if (ret < 0) {
+        LOG_ERR("Failed to send F3 press: %d", ret);
+        return;
+    }
+
+    // Short delay then release
+    k_msleep(50);
+
+    ret = ZMK_EVENT_RAISE(new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
+        .usage_page = HID_USAGE_PAGE_KEYBOARD,
+        .keycode = HID_USAGE_KEY_KEYBOARD_F3,
+        .state = false,
+        .timestamp = k_uptime_get()
+    }));
+
+    if (ret < 0) {
+        LOG_ERR("Failed to send F3 release: %d", ret);
+    } else {
+        LOG_INF("F3 key sent successfully");
+    }
+}
+
+// Send F4 key using ZMK events directly
+static void send_f4_key_direct(void) {
+    LOG_INF("*** SENDING F4 KEY DIRECTLY ***");
+
+    // Send key press
+    int ret = ZMK_EVENT_RAISE(new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
+        .usage_page = HID_USAGE_PAGE_KEYBOARD,
+        .keycode = HID_USAGE_KEY_KEYBOARD_F4,
+        .state = true,
+        .timestamp = k_uptime_get()
+    }));
+
+    if (ret < 0) {
+        LOG_ERR("Failed to send F4 press: %d", ret);
+        return;
+    }
+
+    // Short delay then release
+    k_msleep(50);
+
+    ret = ZMK_EVENT_RAISE(new_zmk_keycode_state_changed((struct zmk_keycode_state_changed){
+        .usage_page = HID_USAGE_PAGE_KEYBOARD,
+        .keycode = HID_USAGE_KEY_KEYBOARD_F4,
+        .state = false,
+        .timestamp = k_uptime_get()
+    }));
+
+    if (ret < 0) {
+        LOG_ERR("Failed to send F4 release: %d", ret);
+    } else {
+        LOG_INF("F4 key sent successfully");
+    }
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
@@ -69,7 +140,8 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         if (yMovement < -TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE UP -> F3 KEY ***");
 
-            // Use the new keyboard event function
+            // Try both methods for maximum compatibility
+            send_f3_key_direct();
             send_trackpad_f3();
 
             // Reset tracking to prevent repeated triggers
@@ -82,7 +154,8 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
             LOG_INF("*** THREE FINGER SWIPE DOWN -> F4 KEY ***");
 
-            // Use the new keyboard event function
+            // Try both methods for maximum compatibility
+            send_f4_key_direct();
             send_trackpad_f4();
 
             // Reset tracking to prevent repeated triggers
