@@ -1,9 +1,8 @@
-// src/three_finger.c - Simple test version with better logging
+// src/three_finger.c - Simple version using ZMK's F3/F4 constants
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <dt-bindings/zmk/hid_usage.h>
-#include <dt-bindings/zmk/hid_usage_pages.h>
+#include <dt-bindings/zmk/keys.h>
 #include <zmk/hid.h>
 #include <zmk/endpoints.h>
 #include <math.h>
@@ -26,9 +25,9 @@ static void send_f3_key_direct(void) {
     LOG_INF("*** SENDING F3 KEY DIRECTLY ***");
     LOG_INF("Before F3 press - about to call zmk_hid_keyboard_press");
 
-    // Use ZMK's HID keyboard system directly
-    int ret1 = zmk_hid_keyboard_press(HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F3));
-    LOG_INF("zmk_hid_keyboard_press returned: %d", ret1);
+    // Use ZMK's HID keyboard system with F3 constant
+    int ret1 = zmk_hid_keyboard_press(F3);
+    LOG_INF("zmk_hid_keyboard_press(F3) returned: %d", ret1);
 
     int ret2 = zmk_endpoints_send_report(0x07);
     LOG_INF("zmk_endpoints_send_report(0x07) returned: %d", ret2);
@@ -37,8 +36,8 @@ static void send_f3_key_direct(void) {
     k_msleep(100); // Increased delay for testing
 
     LOG_INF("About to release F3 key");
-    int ret3 = zmk_hid_keyboard_release(HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F3));
-    LOG_INF("zmk_hid_keyboard_release returned: %d", ret3);
+    int ret3 = zmk_hid_keyboard_release(F3);
+    LOG_INF("zmk_hid_keyboard_release(F3) returned: %d", ret3);
 
     int ret4 = zmk_endpoints_send_report(0x07);
     LOG_INF("zmk_endpoints_send_report(0x07) release returned: %d", ret4);
@@ -51,9 +50,9 @@ static void send_f4_key_direct(void) {
     LOG_INF("*** SENDING F4 KEY DIRECTLY ***");
     LOG_INF("Before F4 press - about to call zmk_hid_keyboard_press");
 
-    // Use ZMK's HID keyboard system directly
-    int ret1 = zmk_hid_keyboard_press(HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F4));
-    LOG_INF("zmk_hid_keyboard_press returned: %d", ret1);
+    // Use ZMK's HID keyboard system with F4 constant
+    int ret1 = zmk_hid_keyboard_press(F4);
+    LOG_INF("zmk_hid_keyboard_press(F4) returned: %d", ret1);
 
     int ret2 = zmk_endpoints_send_report(0x07);
     LOG_INF("zmk_endpoints_send_report(0x07) returned: %d", ret2);
@@ -62,8 +61,8 @@ static void send_f4_key_direct(void) {
     k_msleep(100); // Increased delay for testing
 
     LOG_INF("About to release F4 key");
-    int ret3 = zmk_hid_keyboard_release(HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F4));
-    LOG_INF("zmk_hid_keyboard_release returned: %d", ret3);
+    int ret3 = zmk_hid_keyboard_release(F4);
+    LOG_INF("zmk_hid_keyboard_release(F4) returned: %d", ret3);
 
     int ret4 = zmk_endpoints_send_report(0x07);
     LOG_INF("zmk_endpoints_send_report(0x07) release returned: %d", ret4);

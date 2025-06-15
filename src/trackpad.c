@@ -1,4 +1,4 @@
-// src/trackpad.c - Simplified with correct ZMK headers
+// src/trackpad.c - Simplified with ZMK keys
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -6,8 +6,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <dt-bindings/zmk/hid_usage.h>
-#include <dt-bindings/zmk/hid_usage_pages.h>
+#include <dt-bindings/zmk/keys.h>
 #include <zmk/hid.h>
 #include <zmk/endpoints.h>
 #include "iqs5xx.h"
@@ -27,13 +26,13 @@ void send_keyboard_key(uint16_t keycode) {
 
     uint32_t zmk_keycode;
 
-    // Map input codes to ZMK HID usage values
+    // Map input codes to ZMK key constants
     switch(keycode) {
         case INPUT_KEY_F3:
-            zmk_keycode = HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F3);
+            zmk_keycode = F3;
             break;
         case INPUT_KEY_F4:
-            zmk_keycode = HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_F4);
+            zmk_keycode = F4;
             break;
         default:
             LOG_WRN("Unknown keycode: %d", keycode);
@@ -61,7 +60,7 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     // Map modifier
     switch(modifier) {
         case INPUT_KEY_LEFTCTRL:
-            zmk_modifier = HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+            zmk_modifier = LCTRL;
             break;
         default:
             LOG_WRN("Unknown modifier: %d", modifier);
@@ -71,10 +70,10 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     // Map keycode
     switch(keycode) {
         case INPUT_KEY_EQUAL:
-            zmk_keycode = HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS);
+            zmk_keycode = EQUAL;
             break;
         case INPUT_KEY_MINUS:
-            zmk_keycode = HID_USAGE(HID_USAGE_KEY, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE);
+            zmk_keycode = MINUS;
             break;
         default:
             LOG_WRN("Unknown keycode: %d", keycode);
