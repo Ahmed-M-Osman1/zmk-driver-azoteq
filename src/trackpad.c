@@ -19,78 +19,51 @@ static int event_count = 0;
 static int consecutive_i2c_errors = 0;
 static int64_t last_error_time = 0;
 
-// Check if devicetree behaviors exist
-#if DT_NODE_EXISTS(DT_NODELABEL(gesture_f3))
-    #define HAS_GESTURE_F3 1
-#else
-    #define HAS_GESTURE_F3 0
-#endif
-
-#if DT_NODE_EXISTS(DT_NODELABEL(gesture_f4))
-    #define HAS_GESTURE_F4 1
-#else
-    #define HAS_GESTURE_F4 0
-#endif
-
-#if DT_NODE_EXISTS(DT_NODELABEL(gesture_zoom_in))
-    #define HAS_GESTURE_ZOOM_IN 1
-#else
-    #define HAS_GESTURE_ZOOM_IN 0
-#endif
-
-#if DT_NODE_EXISTS(DT_NODELABEL(gesture_zoom_out))
-    #define HAS_GESTURE_ZOOM_OUT 1
-#else
-    #define HAS_GESTURE_ZOOM_OUT 0
-#endif
-
-// NEW: Function to trigger ZMK behaviors from devicetree
-void trigger_zmk_behavior(const char* behavior_name) {
+// NEW: Send consumer control keys (these work better with ZMK)
+void send_consumer_key(uint16_t usage_id) {
     event_count++;
-    LOG_INF("TRIGGERING BEHAVIOR #%d: %s", event_count, behavior_name);
-
-    // We'll use a simple approach: send a specific unused mouse button
-    // that can be mapped in the keymap to trigger the desired behavior
+    LOG_INF("CONSUMER KEY #%d: usage=0x%04x", event_count, usage_id);
 
     if (trackpad_device) {
-        if (strcmp(behavior_name, "f3") == 0) {
-            // Send mouse button 10 for F3 (you'll map this in keymap)
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_SIDE, 1, false);
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_SIDE, 0, true);
-        } else if (strcmp(behavior_name, "f4") == 0) {
-            // Send mouse button 11 for F4 (you'll map this in keymap)
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_EXTRA, 1, false);
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_EXTRA, 0, true);
-        } else if (strcmp(behavior_name, "zoom_in") == 0) {
-            // Send mouse button 12 for zoom in (you'll map this in keymap)
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_FORWARD, 1, false);
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_FORWARD, 0, true);
-        } else if (strcmp(behavior_name, "zoom_out") == 0) {
-            // Send mouse button 13 for zoom out (you'll map this in keymap)
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_BACK, 1, false);
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_BACK, 0, true);
+        // Send consumer control event
+        int ret = input_report(trackpad_device, INPUT_EV_KEY, usage_id, 1, false, K_NO_WAIT);
+        if (ret < 0) {
+            LOG_ERR("Failed to send consumer key press: %d", ret);
+            return;
         }
 
-        LOG_DBG("Behavior trigger sent successfully");
+        k_msleep(10);
+
+        ret = input_report(trackpad_device, INPUT_EV_KEY, usage_id, 0, true, K_NO_WAIT);
+        if (ret < 0) {
+            LOG_ERR("Failed to send consumer key release: %d", ret);
+            return;
+        }
+
+        LOG_DBG("Consumer key sent successfully");
     } else {
-        LOG_ERR("Trackpad device is NULL - cannot trigger behavior");
+        LOG_ERR("Trackpad device is NULL - cannot send consumer key");
     }
 }
 
-// Updated functions that map to behaviors
+// Map gestures to consumer control keys
 void send_keyboard_key(uint16_t keycode) {
     if (keycode == INPUT_KEY_F3) {
-        trigger_zmk_behavior("f3");
+        // Use consumer control F13 for F3 gesture
+        send_consumer_key(KEY_F13);
     } else if (keycode == INPUT_KEY_F4) {
-        trigger_zmk_behavior("f4");
+        // Use consumer control F14 for F4 gesture
+        send_consumer_key(KEY_F14);
     }
 }
 
 void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
     if (modifier == INPUT_KEY_LEFTCTRL && keycode == INPUT_KEY_EQUAL) {
-        trigger_zmk_behavior("zoom_in");
+        // Use consumer zoom in
+        send_consumer_key(KEY_ZOOMIN);
     } else if (modifier == INPUT_KEY_LEFTCTRL && keycode == INPUT_KEY_MINUS) {
-        trigger_zmk_behavior("zoom_out");
+        // Use consumer zoom out
+        send_consumer_key(KEY_ZOOMOUT);
     }
 }
 
@@ -112,13 +85,10 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     }
 }
 
-// Rest of trackpad.c remains the same...
-// [Include all the existing gesture handler code]
-
+// All the existing gesture handler code remains the same...
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
 
-    // Reset error counter on successful data
     consecutive_i2c_errors = 0;
 
     trigger_count++;
@@ -126,7 +96,18 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     LOG_INF("Raw data: fingers=%d, gestures0=0x%02x, gestures1=0x%02x, rx=%d, ry=%d",
             data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
 
-    // Handle gestures based on finger count
+    for (int i = 0; i < data->finger_count && i < 5; i++) {
+        if (data->fingers[i].strength > 0) {
+            LOG_DBG("Finger %d: pos=(%d,%d), strength=%d, area=%d",
+                    i, data->fingers[i].ax, data->fingers[i].ay,
+                    data->fingers[i].strength, data->fingers[i].area);
+        }
+    }
+
+    if (data->finger_count == 2) {
+        debug_two_finger_positions(data, &g_gesture_state);
+    }
+
     switch (data->finger_count) {
         case 0:
             reset_single_finger_state(&g_gesture_state);
@@ -190,18 +171,11 @@ static int trackpad_init(void) {
     }
     LOG_INF("Trigger handler set successfully");
 
-    // Log which behaviors are available
-    LOG_INF("Available gesture behaviors:");
-    LOG_INF("  F3: %s", HAS_GESTURE_F3 ? "YES" : "NO");
-    LOG_INF("  F4: %s", HAS_GESTURE_F4 ? "YES" : "NO");
-    LOG_INF("  Zoom In: %s", HAS_GESTURE_ZOOM_IN ? "YES" : "NO");
-    LOG_INF("  Zoom Out: %s", HAS_GESTURE_ZOOM_OUT ? "YES" : "NO");
-
     LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
     LOG_INF("Supported gestures:");
     LOG_INF("  1 finger: tap (left click), tap-hold (drag), movement");
-    LOG_INF("  2 finger: tap (right click), scroll, zoom (mapped to mouse buttons)");
-    LOG_INF("  3 finger: tap (middle click), swipe up/down (mapped to mouse buttons)");
+    LOG_INF("  2 finger: tap (right click), scroll, zoom (F13/F14)");
+    LOG_INF("  3 finger: tap (middle click), swipe up/down (ZOOM keys)");
 
     return 0;
 }
