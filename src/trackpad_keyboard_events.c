@@ -21,16 +21,12 @@ static int send_zoom_combo_fixed(uint8_t modifier, uint8_t key, const char* desc
     LOG_INF("*** %s ***", description);
 
     // Step 1: Clear everything first
-    int ret = zmk_hid_keyboard_clear();
-    if (ret < 0) {
-        LOG_ERR("Failed to clear keyboard: %d", ret);
-        return ret;
-    }
+    zmk_hid_keyboard_clear();  // void function - no return value
     zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Step 2: Press modifier and verify
-    ret = zmk_hid_keyboard_press(modifier);
+    int ret = zmk_hid_keyboard_press(modifier);
     if (ret < 0) {
         LOG_ERR("Failed to press modifier %d: %d", modifier, ret);
         return ret;
@@ -67,7 +63,7 @@ static int send_zoom_combo_fixed(uint8_t modifier, uint8_t key, const char* desc
     k_msleep(10);
 
     // Step 6: Final clear to ensure clean state
-    zmk_hid_keyboard_clear();
+    zmk_hid_keyboard_clear();  // void function - no return value
     zmk_endpoints_send_report(0x07);
 
     LOG_INF("%s completed successfully", description);
