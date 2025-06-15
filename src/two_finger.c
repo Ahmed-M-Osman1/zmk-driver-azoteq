@@ -61,7 +61,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         LOG_INF("Initial positions: F0(%d,%d) F1(%d,%d)",
                 data->fingers[0].ax, data->fingers[0].ay,
                 data->fingers[1].ax, data->fingers[1].ay);
-        LOG_INF("Initial distance: %.1f px", (double)zoom.initial_distance);
+        LOG_INF("Initial distance: %d px", (int)zoom.initial_distance);
         return;
     }
 
@@ -85,20 +85,20 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         zoom.stable_readings = 0;
     }
 
-    // Detailed logging for debugging
-    LOG_DBG("Time: %lld ms | Dist: init=%.1f, curr=%.1f, change=%.1f, delta=%.1f | Stable: %d",
-            time_since_start, (double)zoom.initial_distance, (double)current_distance,
-            (double)distance_change, (double)distance_delta, zoom.stable_readings);
+    // Detailed logging for debugging - FIXED FLOAT FORMATTING
+    LOG_INF("Time: %lld ms | Dist: init=%d, curr=%d, change=%d, delta=%d | Stable: %d",
+            time_since_start, (int)zoom.initial_distance, (int)current_distance,
+            (int)distance_change, (int)distance_delta, zoom.stable_readings);
 
     // Wait for session to stabilize before allowing zoom
-    if (time_since_start < 500) {
-        LOG_DBG("Waiting for stabilization (%lld/500 ms)", time_since_start);
+    if (time_since_start < 200) { // Reduced from 500ms to 200ms
+        LOG_INF("Waiting for stabilization (%lld/200 ms)", time_since_start);
         return;
     }
 
-    // Require strong finger contact for zoom
-    if (data->fingers[0].strength < 3000 || data->fingers[1].strength < 3000) {
-        LOG_DBG("Insufficient strength: F0=%d, F1=%d (need >3000)",
+    // Require strong finger contact for zoom - LOWERED THRESHOLD
+    if (data->fingers[0].strength < 2000 || data->fingers[1].strength < 2000) {
+        LOG_INF("Insufficient strength: F0=%d, F1=%d (need >2000)",
                 data->fingers[0].strength, data->fingers[1].strength);
         return;
     }
@@ -111,35 +111,40 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
     // Check for significant distance change (zoom threshold)
     if (fabsf(distance_change) > 100.0f) {
+        LOG_INF("*** ZOOM THRESHOLD EXCEEDED: %d px ***", (int)distance_change);
+
         if (!zoom.zoom_session_active) {
             zoom.zoom_session_active = true;
             LOG_INF("*** ZOOM SESSION ACTIVATED ***");
-            LOG_INF("Distance change: %.1f px (threshold: 100px)", (double)distance_change);
+            LOG_INF("Distance change: %d px (threshold: 100px)", (int)distance_change);
         }
 
-        // Require stable readings before sending zoom command
-        if (zoom.stable_readings >= 3) {
+        // NEW: Lower stability requirement and add more debug
+        if (zoom.stable_readings >= 2) { // Reduced from 3 to 2
+            LOG_INF("*** ZOOM COMMAND READY - SENDING NOW ***");
+
             if (distance_change > 0) {
-                LOG_INF("*** ZOOM IN: Fingers moved apart %.1f px ***", (double)distance_change);
+                LOG_INF("*** ZOOM IN: Fingers moved apart %d px ***", (int)distance_change);
                 send_trackpad_zoom_in();
             } else {
-                LOG_INF("*** ZOOM OUT: Fingers moved together %.1f px ***", (double)distance_change);
+                LOG_INF("*** ZOOM OUT: Fingers moved together %d px ***", (int)distance_change);
                 send_trackpad_zoom_out();
             }
 
             zoom.zoom_command_sent = true;
             LOG_INF("Zoom command sent - session locked until finger lift");
         } else {
-            LOG_DBG("Zoom ready but waiting for stability (%d/3 stable readings)", zoom.stable_readings);
+            LOG_INF("Zoom ready but waiting for stability (%d/2 stable readings)", zoom.stable_readings);
         }
     } else {
-        LOG_DBG("Distance change %.1f px below threshold (100px)", (double)distance_change);
+        LOG_INF("Distance change %d px below threshold (100px)", (int)distance_change);
     }
 
     // Show finger positions for debugging
-    LOG_DBG("Current positions: F0(%d,%d) F1(%d,%d)",
+    LOG_INF("Current positions: F0(%d,%d) F1(%d,%d) | Strengths: %d/%d",
             data->fingers[0].ax, data->fingers[0].ay,
-            data->fingers[1].ax, data->fingers[1].ay);
+            data->fingers[1].ax, data->fingers[1].ay,
+            data->fingers[0].strength, data->fingers[1].strength);
 }
 
 void reset_two_finger_state(struct gesture_state *state) {
