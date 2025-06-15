@@ -1,4 +1,4 @@
-// src/trackpad_keyboard_events.c - FIXED VERSION
+// src/trackpad_keyboard_events.c - FIXED VERSION with 0x07
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -16,18 +16,18 @@ int trackpad_keyboard_init(const struct device *input_dev) {
     return 0;
 }
 
-// FIXED: Proper timing and key codes for zoom
+// FIXED: Use 0x07 for keyboard HID usage page
 static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* description, int hold_time) {
     LOG_INF("*** SENDING %s (mod:0x%02x + key:0x%02x) ***", description, modifier, key);
 
-    // Clear any existing state
+    // Clear any existing state - USE 0x07
     zmk_hid_keyboard_clear();
-    int ret = zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    int ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
         LOG_ERR("Failed to clear keyboard state: %d", ret);
         return ret;
     }
-    k_msleep(50); // Longer initial wait
+    k_msleep(50);
 
     // Press modifier first
     ret = zmk_hid_keyboard_press(modifier);
@@ -35,34 +35,34 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
         LOG_ERR("Failed to press modifier %d: %d", modifier, ret);
         return ret;
     }
-    ret = zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
         LOG_ERR("Failed to send modifier report: %d", ret);
         return ret;
     }
-    k_msleep(30); // Wait for modifier to register
+    k_msleep(30);
 
     // Press main key
     ret = zmk_hid_keyboard_press(key);
     if (ret < 0) {
         LOG_ERR("Failed to press key %d: %d", key, ret);
         zmk_hid_keyboard_release(modifier);
-        zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+        zmk_endpoints_send_report(0x07);
         return ret;
     }
-    ret = zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
         LOG_ERR("Failed to send key report: %d", ret);
         return ret;
     }
-    k_msleep(hold_time); // Hold the combination
+    k_msleep(hold_time);
 
     // Release main key first
     ret = zmk_hid_keyboard_release(key);
     if (ret < 0) {
         LOG_ERR("Failed to release key: %d", ret);
     }
-    ret = zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
         LOG_ERR("Failed to send key release report: %d", ret);
     }
@@ -73,7 +73,7 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
     if (ret < 0) {
         LOG_ERR("Failed to release modifier: %d", ret);
     }
-    ret = zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
         LOG_ERR("Failed to send modifier release report: %d", ret);
     }
@@ -81,7 +81,7 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
 
     // Final clear
     zmk_hid_keyboard_clear();
-    ret = zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    ret = zmk_endpoints_send_report(0x07);
     k_msleep(20);
 
     LOG_INF("%s sequence completed", description);
@@ -93,28 +93,27 @@ void send_trackpad_zoom_in(void) {
     LOG_INF("=== STARTING ZOOM IN SEQUENCE ===");
 
     // Method 1: Ctrl + Plus (using correct keycodes)
-    // Try EQUAL first (which becomes + with shift, but Ctrl+= should work)
     send_zoom_combo(LCTRL, EQUAL, "Ctrl+Equal(Plus)", 150);
     k_msleep(100);
 
     // Method 2: Ctrl + Shift + Plus (explicit plus)
     LOG_INF("Trying Ctrl+Shift+Plus explicitly");
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(50);
 
     zmk_hid_keyboard_press(LCTRL);
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(20);
     zmk_hid_keyboard_press(LSHIFT);
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(20);
     zmk_hid_keyboard_press(EQUAL); // Shift+Equal = Plus
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(150);
 
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(100);
 
     // Method 3: Cmd+Plus for Mac compatibility
@@ -145,7 +144,7 @@ void send_trackpad_zoom_out(void) {
     LOG_INF("=== ZOOM OUT SEQUENCE COMPLETE ===");
 }
 
-// Test functions remain the same
+// Test functions
 void send_trackpad_f3(void) {
     LOG_INF("*** TRACKPAD F3 TEST ***");
     send_zoom_combo(0, F3, "F3_Test", 100);
