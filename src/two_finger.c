@@ -81,8 +81,19 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
-    // Manual pinch-to-zoom detection (IMPROVED)
-    if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0) {
+    // Manual pinch-to-zoom detection with cooldown (FIXED)
+    if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0 &&
+        data->rx == 0 && data->ry == 0) { // Only check zoom when no relative movement
+
+        // Check if enough time has passed since last zoom (prevent rapid-fire)
+        int64_t current_time = k_uptime_get();
+        static int64_t last_zoom_time = 0;
+        if (current_time - last_zoom_time < 300) { // 300ms cooldown between zooms
+            LOG_DBG("Zoom blocked by cooldown: %lld ms remaining",
+                    300 - (current_time - last_zoom_time));
+            return;
+        }
+
         // Calculate current distance between fingers
         float currentDistance = calculate_distance(
             data->fingers[0].ax, data->fingers[0].ay,
@@ -100,31 +111,27 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         LOG_DBG("Pinch check: initial=%.1f, current=%.1f, change=%.1f",
                 (double)initialDistance, (double)currentDistance, (double)distanceChange);
 
-        // Only trigger zoom if change is significant
-        if (fabsf(distanceChange) > ZOOM_THRESHOLD) {
-            // Determine zoom direction and magnitude
-            int zoom_steps = (int)(distanceChange / ZOOM_SENSITIVITY);
+        // Only trigger zoom if change is significant (increased threshold)
+        if (fabsf(distanceChange) > (ZOOM_THRESHOLD * 2)) { // Double the threshold
+            LOG_INF("*** PINCH-TO-ZOOM: distance_change=%.1f ***",
+                    (double)distanceChange);
 
-            if (zoom_steps != 0) {
-                LOG_INF("*** PINCH-TO-ZOOM: distance_change=%.1f, steps=%d ***",
-                        (double)distanceChange, zoom_steps);
-
-                if (zoom_steps > 0) {
-                    // Pinch OUT = Zoom IN
-                    LOG_INF("PINCH OUT -> ZOOM IN");
-                    send_trackpad_zoom_in();
-                } else {
-                    // Pinch IN = Zoom OUT
-                    LOG_INF("PINCH IN -> ZOOM OUT");
-                    send_trackpad_zoom_out();
-                }
-
-                // Update start positions to prevent continuous zoom
-                state->twoFingerStartPos[0].x = data->fingers[0].ax;
-                state->twoFingerStartPos[0].y = data->fingers[0].ay;
-                state->twoFingerStartPos[1].x = data->fingers[1].ax;
-                state->twoFingerStartPos[1].y = data->fingers[1].ay;
+            if (distanceChange > 0) {
+                // Pinch OUT = Zoom IN
+                LOG_INF("PINCH OUT -> ZOOM IN");
+                send_trackpad_zoom_in();
+            } else {
+                // Pinch IN = Zoom OUT
+                LOG_INF("PINCH IN -> ZOOM OUT");
+                send_trackpad_zoom_out();
             }
+
+            // Update cooldown and reset positions
+            last_zoom_time = current_time;
+            state->twoFingerStartPos[0].x = data->fingers[0].ax;
+            state->twoFingerStartPos[0].y = data->fingers[0].ay;
+            state->twoFingerStartPos[1].x = data->fingers[1].ax;
+            state->twoFingerStartPos[1].y = data->fingers[1].ay;
         }
     }
 }

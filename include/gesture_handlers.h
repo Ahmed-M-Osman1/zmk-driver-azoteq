@@ -46,8 +46,8 @@ struct gesture_state {
 #define TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST 30   // Reduced from 50
 #define SCROLL_REPORT_DISTANCE              15
 #define MOVEMENT_THRESHOLD                  0.5f
-#define ZOOM_THRESHOLD                      20    // Reduced from 30
-#define ZOOM_SENSITIVITY                    15    // Increased from 10
+#define ZOOM_THRESHOLD                      50    // Increased from 20 to prevent multiple triggers
+#define ZOOM_SENSITIVITY                    25    // Increased from 15
 
 // Function declarations for each gesture handler file
 
