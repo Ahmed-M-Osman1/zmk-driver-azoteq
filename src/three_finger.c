@@ -22,7 +22,7 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// Send Control+Up key combination for Mission Control (FIXED VERSION)
+// Send Control+Up key combination for Mission Control
 static void send_control_up(void) {
     LOG_INF("*** SENDING CONTROL+UP (MISSION CONTROL) ***");
 
@@ -63,10 +63,50 @@ static void send_control_up(void) {
     LOG_INF("Control+Up sequence complete - Mission Control should appear!");
 }
 
+// NEW: Send Control+Down for Application Windows (App Exposé)
+static void send_control_down(void) {
+    LOG_INF("*** SENDING CONTROL+DOWN (APPLICATION WINDOWS) ***");
+
+    // Clear any existing HID state first
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
+    // Press Control
+    int ret1 = zmk_hid_keyboard_press(LCTRL);
+    if (ret1 < 0) {
+        LOG_ERR("Failed to press CTRL: %d", ret1);
+        return;
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
+    // Press Down Arrow
+    int ret2 = zmk_hid_keyboard_press(DOWN_ARROW);
+    if (ret2 < 0) {
+        LOG_ERR("Failed to press DOWN: %d", ret2);
+        zmk_hid_keyboard_release(LCTRL);
+        zmk_endpoints_send_report(0x07);
+        return;
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(50); // Hold the combination
+
+    // Release Down Arrow
+    zmk_hid_keyboard_release(DOWN_ARROW);
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
+    // Release Control
+    zmk_hid_keyboard_release(LCTRL);
+    zmk_endpoints_send_report(0x07);
+
+    LOG_INF("Control+Down sequence complete - Application Windows should appear!");
+}
+
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
     // Early exit if not exactly three fingers
     if (data->finger_count != 3) {
-        LOG_DBG("Invalid finger count: %d", data->finger_count);
         return;
     }
 
@@ -101,13 +141,12 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
     // Skip if gesture already triggered
     if (state->gestureTriggered) {
-        LOG_DBG("Gesture already triggered, ignoring event");
         return;
     }
 
-    // Check for three finger swipe gestures after 100ms
+    // Check for three finger swipe gestures after 150ms
     int64_t time_since_start = current_time - state->threeFingerPressTime;
-    if (time_since_start > 100 && // Wait 100ms before checking swipes
+    if (time_since_start > 150 && // Wait 150ms before checking swipes
         data->fingers[0].strength > 0 && data->fingers[1].strength > 0 && data->fingers[2].strength > 0) {
 
         // Calculate average movement in Y direction
@@ -120,23 +159,24 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         LOG_DBG("Three finger Y movement: initial_avg=%.1f, current_avg=%.1f, movement=%.1f",
                 (double)initialAvgY, (double)currentAvgY, (double)yMovement);
 
-        // Detect significant downward movement (swipe down) OR upward movement (swipe up)
-        if (fabsf(yMovement) > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
+        // Detect significant movement (50px threshold for better reliability)
+        if (fabsf(yMovement) > 50.0f) {
             if (yMovement > 0) {
-                LOG_INF("*** THREE FINGER SWIPE DOWN -> MISSION CONTROL ***");
+                // SWIPE DOWN = Application Windows (App Exposé)
+                LOG_INF("*** THREE FINGER SWIPE DOWN -> APPLICATION WINDOWS ***");
+                send_control_down();
             } else {
+                // SWIPE UP = Mission Control
                 LOG_INF("*** THREE FINGER SWIPE UP -> MISSION CONTROL ***");
+                send_control_up();
             }
-
-            // Send Control+Up for Mission Control
-            send_control_up();
 
             // Mark gesture as complete
             state->gestureTriggered = true;
             global_gesture_cooldown = current_time;
             state->threeFingersPressed = false;
 
-            LOG_INF("Mission Control gesture complete - cooldown active for 1000ms");
+            LOG_INF("Three finger gesture complete - cooldown active for 1000ms");
             return;
         }
     }
@@ -149,17 +189,17 @@ void reset_three_finger_state(struct gesture_state *state) {
 
         // Check if we're in gesture cooldown
         if (k_uptime_get() - global_gesture_cooldown > 500) {
-            LOG_INF("*** THREE FINGER CLICK -> MIDDLE CLICK ***");
+            LOG_INF("*** THREE FINGER TAP -> MIDDLE CLICK ***");
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
         } else {
-            LOG_DBG("Skipping three finger click - in cooldown");
+            LOG_DBG("Skipping three finger tap - in cooldown");
         }
     }
 
     if (state->threeFingersPressed) {
         state->threeFingersPressed = false;
         state->gestureTriggered = false;
-        LOG_DBG("Three fingers released");
+        LOG_DBG("Three fingers released - ready for next gesture");
     }
 }
