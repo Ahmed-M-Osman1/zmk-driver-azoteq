@@ -1,4 +1,4 @@
-// src/three_finger.c - Updated with correct ZMK APIs
+// src/three_finger.c - Updated with correct ZMK event syntax
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -31,12 +31,8 @@ static void send_f3_key_direct(void) {
         .timestamp = k_uptime_get()
     };
 
-    // Raise the event
-    int ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, keycode_event);
-    if (ret < 0) {
-        LOG_ERR("Failed to send F3 press: %d", ret);
-        return;
-    }
+    // Raise the event using proper macro
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(keycode_event));
 
     // Short delay then release
     k_msleep(50);
@@ -44,12 +40,8 @@ static void send_f3_key_direct(void) {
     keycode_event.state = false;
     keycode_event.timestamp = k_uptime_get();
 
-    ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, keycode_event);
-    if (ret < 0) {
-        LOG_ERR("Failed to send F3 release: %d", ret);
-    } else {
-        LOG_INF("F3 key sent successfully");
-    }
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(keycode_event));
+    LOG_INF("F3 key sent successfully");
 }
 
 // Send F4 key using ZMK behavior system
@@ -63,12 +55,8 @@ static void send_f4_key_direct(void) {
         .timestamp = k_uptime_get()
     };
 
-    // Raise the event
-    int ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, keycode_event);
-    if (ret < 0) {
-        LOG_ERR("Failed to send F4 press: %d", ret);
-        return;
-    }
+    // Raise the event using proper macro
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(keycode_event));
 
     // Short delay then release
     k_msleep(50);
@@ -76,12 +64,8 @@ static void send_f4_key_direct(void) {
     keycode_event.state = false;
     keycode_event.timestamp = k_uptime_get();
 
-    ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, keycode_event);
-    if (ret < 0) {
-        LOG_ERR("Failed to send F4 release: %d", ret);
-    } else {
-        LOG_INF("F4 key sent successfully");
-    }
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(keycode_event));
+    LOG_INF("F4 key sent successfully");
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {

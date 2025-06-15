@@ -1,4 +1,4 @@
-// src/trackpad.c - Updated for ZMK integration with correct APIs
+// src/trackpad.c - Updated for ZMK integration with correct event syntax
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -37,25 +37,21 @@ void send_keyboard_key(uint16_t keycode) {
             return;
     }
 
-    // Send key press
+    // Send key press using proper ZMK macro
     struct zmk_keycode_state_changed press_event = {
         .keycode = hid_keycode,
         .state = true,
         .timestamp = k_uptime_get()
     };
 
-    int ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, press_event);
-    if (ret < 0) {
-        LOG_ERR("Failed to send key press: %d", ret);
-        return;
-    }
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(press_event));
 
     // Schedule key release after short delay
     k_msleep(50);
 
     press_event.state = false;
     press_event.timestamp = k_uptime_get();
-    ZMK_EVENT_RAISE(zmk_keycode_state_changed, press_event);
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(press_event));
 }
 
 void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
@@ -93,11 +89,7 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
         .timestamp = k_uptime_get()
     };
 
-    int ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, mod_event);
-    if (ret < 0) {
-        LOG_ERR("Failed to send modifier press: %d", ret);
-        return;
-    }
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(mod_event));
 
     k_msleep(10);
 
@@ -108,25 +100,21 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
         .timestamp = k_uptime_get()
     };
 
-    ret = ZMK_EVENT_RAISE(zmk_keycode_state_changed, key_event);
-    if (ret < 0) {
-        LOG_ERR("Failed to send key press: %d", ret);
-        return;
-    }
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(key_event));
 
     k_msleep(50);
 
     // Release key
     key_event.state = false;
     key_event.timestamp = k_uptime_get();
-    ZMK_EVENT_RAISE(zmk_keycode_state_changed, key_event);
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(key_event));
 
     k_msleep(10);
 
     // Release modifier
     mod_event.state = false;
     mod_event.timestamp = k_uptime_get();
-    ZMK_EVENT_RAISE(zmk_keycode_state_changed, mod_event);
+    ZMK_EVENT_RAISE(as_zmk_keycode_state_changed(mod_event));
 }
 
 // Keep existing send_input_event for mouse events (unchanged)
