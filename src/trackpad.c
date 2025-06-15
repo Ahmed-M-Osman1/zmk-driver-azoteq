@@ -1,4 +1,4 @@
-// src/trackpad.c - Fixed ZMK behavior calls
+// src/trackpad.c - Simplified using only working ZMK HID functions
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -6,10 +6,8 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <zmk/keymap.h>
-#include <zmk/behavior.h>
-#include <zmk/event_manager.h>
-#include <zmk/events/keycode_state_changed.h>
+#include <zmk/hid.h>
+#include <zmk/endpoints.h>
 #include "iqs5xx.h"
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
@@ -21,7 +19,7 @@ static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 
-// Send keyboard keys using ZMK's event system (for trackpad gestures)
+// Send keyboard keys using ZMK's HID system directly (simplified)
 void send_keyboard_key(uint16_t keycode) {
     LOG_INF("Sending keyboard key: %d", keycode);
 
@@ -40,22 +38,17 @@ void send_keyboard_key(uint16_t keycode) {
             return;
     }
 
-    // Send key events directly using ZMK's event system
-    struct zmk_keycode_state_changed *key_event = new_zmk_keycode_state_changed();
-    key_event->usage_page = HID_USAGE_KEY;
-    key_event->keycode = zmk_keycode;
-    key_event->implicit_modifiers = 0;
-    key_event->explicit_modifiers = 0;
+    // Use ZMK's HID keyboard system directly (same as trackpad_keyboard_events.c)
+    zmk_hid_keyboard_press(zmk_keycode);
+    zmk_endpoints_send_report(0x01);
 
-    // Send key press
-    key_event->state = true;
-    ZMK_EVENT_RAISE(key_event);
-
-    // Schedule key release after short delay
+    // Short delay then release
     k_msleep(50);
 
-    key_event->state = false;
-    ZMK_EVENT_RAISE(key_event);
+    zmk_hid_keyboard_release(zmk_keycode);
+    zmk_endpoints_send_report(0x01);
+
+    LOG_INF("Key sent successfully via HID");
 }
 
 void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
@@ -86,36 +79,27 @@ void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
             return;
     }
 
-    // Send modifier press
-    struct zmk_keycode_state_changed *mod_event = new_zmk_keycode_state_changed();
-    mod_event->usage_page = HID_USAGE_KEY;
-    mod_event->keycode = zmk_modifier;
-    mod_event->implicit_modifiers = 0;
-    mod_event->explicit_modifiers = 0;
-    mod_event->state = true;
-    ZMK_EVENT_RAISE(mod_event);
-
+    // Use ZMK's HID keyboard system directly (same as trackpad_keyboard_events.c)
+    // Press Ctrl
+    zmk_hid_keyboard_press(zmk_modifier);
+    zmk_endpoints_send_report(0x01);
     k_msleep(10);
 
-    // Send key press
-    struct zmk_keycode_state_changed *key_event = new_zmk_keycode_state_changed();
-    key_event->usage_page = HID_USAGE_KEY;
-    key_event->keycode = zmk_keycode;
-    key_event->implicit_modifiers = 0;
-    key_event->explicit_modifiers = 0;
-    key_event->state = true;
-    ZMK_EVENT_RAISE(key_event);
-
+    // Press key
+    zmk_hid_keyboard_press(zmk_keycode);
+    zmk_endpoints_send_report(0x01);
     k_msleep(50);
 
-    // Release key then modifier
-    key_event->state = false;
-    ZMK_EVENT_RAISE(key_event);
-
+    // Release key
+    zmk_hid_keyboard_release(zmk_keycode);
+    zmk_endpoints_send_report(0x01);
     k_msleep(10);
 
-    mod_event->state = false;
-    ZMK_EVENT_RAISE(mod_event);
+    // Release Ctrl
+    zmk_hid_keyboard_release(zmk_modifier);
+    zmk_endpoints_send_report(0x01);
+
+    LOG_INF("Combo sent successfully via HID");
 }
 
 // Keep existing send_input_event for mouse events (unchanged)
