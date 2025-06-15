@@ -1,4 +1,4 @@
-// src/trackpad.c - Added rate-limiting for trackpad events
+// src/trackpad.c - Fixed version with proper gesture mappings
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -20,109 +20,6 @@ static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 static int64_t last_event_time = 0; // For rate-limiting
-
-// Send keyboard keys using ZMK's HID system directly (simplified)
-void send_keyboard_key(uint16_t keycode) {
-    LOG_INF("Sending keyboard key: %d", keycode);
-
-    uint32_t zmk_keycode;
-
-    // Map input codes to ZMK key constants
-    switch(keycode) {
-        case INPUT_KEY_F3:
-            zmk_keycode = F3;
-            break;
-        case INPUT_KEY_F4:
-            zmk_keycode = F4;
-            break;
-        default:
-            LOG_WRN("Unknown keycode: %d", keycode);
-            return;
-    }
-
-    // Clear HID state to prevent stuck keys
-    zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
-
-    // Press key
-    int ret1 = zmk_hid_keyboard_press(zmk_keycode);
-    if (ret1 < 0) {
-        LOG_ERR("Failed to press keycode %d: %d", zmk_keycode, ret1);
-        return;
-    }
-    // Send report
-    int ret2 = zmk_endpoints_send_report(0x07);
-    if (ret2 < 0) {
-        LOG_ERR("Failed to send press report for keycode %d: %d", zmk_keycode, ret2);
-        zmk_hid_keyboard_release(zmk_keycode);
-        return;
-    }
-    // Short delay to ensure host registers press
-    k_msleep(50);
-    // Release key
-    int ret3 = zmk_hid_keyboard_release(zmk_keycode);
-    if (ret3 < 0) {
-        LOG_ERR("Failed to release keycode %d: %d", zmk_keycode, ret3);
-    }
-    // Send final report
-    int ret4 = zmk_endpoints_send_report(0x07);
-    if (ret4 < 0) {
-        LOG_ERR("Failed to send release report for keycode %d: %d", zmk_keycode, ret4);
-    }
-
-    LOG_INF("Keycode %d sent successfully via HID", zmk_keycode);
-}
-
-void send_keyboard_combo(uint16_t modifier, uint16_t keycode) {
-    LOG_INF("Sending keyboard combo: mod=%d, key=%d", modifier, keycode);
-
-    uint32_t zmk_modifier, zmk_keycode;
-
-    // Map modifier
-    switch(modifier) {
-        case INPUT_KEY_LEFTCTRL:
-            zmk_modifier = LCTRL;
-            break;
-        default:
-            LOG_WRN("Unknown modifier: %d", modifier);
-            return;
-    }
-
-    // Map keycode
-    switch(keycode) {
-        case INPUT_KEY_EQUAL:
-            zmk_keycode = EQUAL;
-            break;
-        case INPUT_KEY_MINUS:
-            zmk_keycode = MINUS;
-            break;
-        default:
-            LOG_WRN("Unknown keycode: %d", keycode);
-            return;
-    }
-
-    // Clear HID state
-    zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
-
-    // Press Ctrl
-    zmk_hid_keyboard_press(zmk_modifier);
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
-    // Press key
-    zmk_hid_keyboard_press(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
-    k_msleep(50);
-    // Release key
-    zmk_hid_keyboard_release(zmk_keycode);
-    zmk_endpoints_send_report(0x07);
-    k_msleep(10);
-    // Release Ctrl
-    zmk_hid_keyboard_release(zmk_modifier);
-    zmk_endpoints_send_report(0x07);
-
-    LOG_INF("Combo sent successfully via HID");
-}
 
 // Keep existing send_input_event for mouse events (unchanged)
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
@@ -244,8 +141,8 @@ static int trackpad_init(void) {
     LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
     LOG_INF("Supported gestures:");
     LOG_INF("  1 finger: tap (left click), tap-hold (drag), movement");
-    LOG_INF("  2 finger: tap (right click), scroll, zoom (Ctrl+Plus/Minus)");
-    LOG_INF("  3 finger: tap (middle click), swipe up/down (F3/F4)");
+    LOG_INF("  2 finger: tap (right click), scroll, PINCH-TO-ZOOM (Ctrl+Plus/Minus)");
+    LOG_INF("  3 finger: tap (middle click), swipe up/down (Mission Control)");
 
     return 0;
 }

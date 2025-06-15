@@ -1,4 +1,4 @@
-// src/trackpad_keyboard_events.c - Fixed to use Consumer HID page for F3/F4
+// src/trackpad_keyboard_events.c - FIXED to properly release keys
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -15,90 +15,140 @@ int trackpad_keyboard_init(const struct device *input_dev) {
     return 0;
 }
 
-// Send F3 key using ZMK's Consumer HID system (for Mac Mission Control)
+// Send F3 key using ZMK's keyboard HID system (FIXED VERSION)
 void send_trackpad_f3(void) {
-    LOG_INF("*** TRACKPAD F3 KEY (CONSUMER) ***");
+    LOG_INF("*** TRACKPAD F3 KEY ***");
 
-    // Use ZMK's Consumer HID system for F3 (Mission Control on Mac)
-    // F3 on Mac is typically Mission Control which is a consumer key
-    zmk_hid_consumer_press(0x29D); // Mission Control consumer code
-    zmk_endpoints_send_report(0x0c); // Consumer usage page
+    // Clear any existing state first
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
 
-    // Short delay then release
-    k_msleep(50);
+    // Press F3
+    int ret1 = zmk_hid_keyboard_press(F3);
+    if (ret1 < 0) {
+        LOG_ERR("Failed to press F3: %d", ret1);
+        return;
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(50); // Hold key briefly
 
-    zmk_hid_consumer_release(0x29D);
-    zmk_endpoints_send_report(0x0c);
+    // Release F3
+    int ret2 = zmk_hid_keyboard_release(F3);
+    if (ret2 < 0) {
+        LOG_ERR("Failed to release F3: %d", ret2);
+    }
+    zmk_endpoints_send_report(0x07);
 
-    LOG_INF("F3 key sent via Consumer HID");
+    LOG_INF("F3 key sent and released successfully");
 }
 
-// Send F4 key using ZMK's Consumer HID system (for Mac Launchpad)
+// Send F4 key using ZMK's keyboard HID system (FIXED VERSION)
 void send_trackpad_f4(void) {
-    LOG_INF("*** TRACKPAD F4 KEY (CONSUMER) ***");
+    LOG_INF("*** TRACKPAD F4 KEY ***");
 
-    // Use ZMK's Consumer HID system for F4 (Launchpad on Mac)
-    // F4 on Mac is typically Launchpad which is a consumer key
-    zmk_hid_consumer_press(0x2A2); // Launchpad consumer code
-    zmk_endpoints_send_report(0x0c); // Consumer usage page
+    // Clear any existing state first
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
 
-    // Short delay then release
-    k_msleep(50);
+    // Press F4
+    int ret1 = zmk_hid_keyboard_press(F4);
+    if (ret1 < 0) {
+        LOG_ERR("Failed to press F4: %d", ret1);
+        return;
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(50); // Hold key briefly
 
-    zmk_hid_consumer_release(0x2A2);
-    zmk_endpoints_send_report(0x0c);
+    // Release F4
+    int ret2 = zmk_hid_keyboard_release(F4);
+    if (ret2 < 0) {
+        LOG_ERR("Failed to release F4: %d", ret2);
+    }
+    zmk_endpoints_send_report(0x07);
 
-    LOG_INF("F4 key sent via Consumer HID");
+    LOG_INF("F4 key sent and released successfully");
 }
 
-// Send zoom in (Ctrl+Plus) - Keep using keyboard HID
+// Send zoom in (Ctrl+Plus) - IMPROVED ERROR HANDLING
 void send_trackpad_zoom_in(void) {
     LOG_INF("*** TRACKPAD ZOOM IN ***");
 
+    // Clear any existing state first
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
     // Press Ctrl
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    int ret1 = zmk_hid_keyboard_press(LCTRL);
+    if (ret1 < 0) {
+        LOG_ERR("Failed to press CTRL: %d", ret1);
+        return;
+    }
     zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Press Equal/Plus
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS);
+    int ret2 = zmk_hid_keyboard_press(EQUAL);
+    if (ret2 < 0) {
+        LOG_ERR("Failed to press EQUAL: %d", ret2);
+        zmk_hid_keyboard_release(LCTRL);
+        zmk_endpoints_send_report(0x07);
+        return;
+    }
     zmk_endpoints_send_report(0x07);
     k_msleep(50);
 
     // Release Equal/Plus
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS);
+    zmk_hid_keyboard_release(EQUAL);
     zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Release Ctrl
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    zmk_hid_keyboard_release(LCTRL);
     zmk_endpoints_send_report(0x07);
 
-    LOG_INF("Zoom in sent via Keyboard HID");
+    LOG_INF("Zoom in sent successfully");
 }
 
-// Send zoom out (Ctrl+Minus) - Keep using keyboard HID
+// Send zoom out (Ctrl+Minus) - IMPROVED ERROR HANDLING
 void send_trackpad_zoom_out(void) {
     LOG_INF("*** TRACKPAD ZOOM OUT ***");
 
+    // Clear any existing state first
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
     // Press Ctrl
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    int ret1 = zmk_hid_keyboard_press(LCTRL);
+    if (ret1 < 0) {
+        LOG_ERR("Failed to press CTRL: %d", ret1);
+        return;
+    }
     zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Press Minus
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE);
+    int ret2 = zmk_hid_keyboard_press(MINUS);
+    if (ret2 < 0) {
+        LOG_ERR("Failed to press MINUS: %d", ret2);
+        zmk_hid_keyboard_release(LCTRL);
+        zmk_endpoints_send_report(0x07);
+        return;
+    }
     zmk_endpoints_send_report(0x07);
     k_msleep(50);
 
     // Release Minus
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE);
+    zmk_hid_keyboard_release(MINUS);
     zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Release Ctrl
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    zmk_hid_keyboard_release(LCTRL);
     zmk_endpoints_send_report(0x07);
 
-    LOG_INF("Zoom out sent via Keyboard HID");
+    LOG_INF("Zoom out sent successfully");
 }

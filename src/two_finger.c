@@ -4,7 +4,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include "gesture_handlers.h"
-#include "trackpad_keyboard_events.h"  // NEW INCLUDE
+#include "trackpad_keyboard_events.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
@@ -81,10 +81,8 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
-    // Manual zoom detection - now uses trackpad keyboard events
-    if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0 &&
-        data->rx == 0 && data->ry == 0) { // Only check zoom when no relative movement
-
+    // Manual pinch-to-zoom detection (IMPROVED)
+    if (data->fingers[0].strength > 0 && data->fingers[1].strength > 0) {
         // Calculate current distance between fingers
         float currentDistance = calculate_distance(
             data->fingers[0].ax, data->fingers[0].ay,
@@ -99,8 +97,8 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
         float distanceChange = currentDistance - initialDistance;
 
-        LOG_DBG("Zoom check: initial=%d, current=%d, change=%d",
-                (int)initialDistance, (int)currentDistance, (int)distanceChange);
+        LOG_DBG("Pinch check: initial=%.1f, current=%.1f, change=%.1f",
+                (double)initialDistance, (double)currentDistance, (double)distanceChange);
 
         // Only trigger zoom if change is significant
         if (fabsf(distanceChange) > ZOOM_THRESHOLD) {
@@ -108,16 +106,16 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             int zoom_steps = (int)(distanceChange / ZOOM_SENSITIVITY);
 
             if (zoom_steps != 0) {
-                LOG_INF("*** ZOOM: distance_change=%d, steps=%d ***",
-                        (int)distanceChange, zoom_steps);
+                LOG_INF("*** PINCH-TO-ZOOM: distance_change=%.1f, steps=%d ***",
+                        (double)distanceChange, zoom_steps);
 
                 if (zoom_steps > 0) {
-                    // Zoom IN - Send through trackpad keyboard events
-                    LOG_INF("ZOOM IN - SENDING TRACKPAD ZOOM IN");
+                    // Pinch OUT = Zoom IN
+                    LOG_INF("PINCH OUT -> ZOOM IN");
                     send_trackpad_zoom_in();
                 } else {
-                    // Zoom OUT - Send through trackpad keyboard events
-                    LOG_INF("ZOOM OUT - SENDING TRACKPAD ZOOM OUT");
+                    // Pinch IN = Zoom OUT
+                    LOG_INF("PINCH IN -> ZOOM OUT");
                     send_trackpad_zoom_out();
                 }
 

@@ -22,10 +22,44 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// Send Control+Up key combination
+// Send Control+Up key combination for Mission Control (FIXED VERSION)
 static void send_control_up(void) {
-    LOG_INF("*** SENDING CONTROL+UP ***");
-    send_keyboard_combo(INPUT_KEY_LEFTCTRL, INPUT_KEY_UP);
+    LOG_INF("*** SENDING CONTROL+UP (MISSION CONTROL) ***");
+
+    // Clear any existing HID state first
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
+    // Press Control
+    int ret1 = zmk_hid_keyboard_press(LCTRL);
+    if (ret1 < 0) {
+        LOG_ERR("Failed to press CTRL: %d", ret1);
+        return;
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
+    // Press Up Arrow
+    int ret2 = zmk_hid_keyboard_press(UP_ARROW);
+    if (ret2 < 0) {
+        LOG_ERR("Failed to press UP: %d", ret2);
+        zmk_hid_keyboard_release(LCTRL);
+        zmk_endpoints_send_report(0x07);
+        return;
+    }
+    zmk_endpoints_send_report(0x07);
+    k_msleep(50); // Hold the combination
+
+    // Release Up Arrow
+    zmk_hid_keyboard_release(UP_ARROW);
+    zmk_endpoints_send_report(0x07);
+    k_msleep(10);
+
+    // Release Control
+    zmk_hid_keyboard_release(LCTRL);
+    zmk_endpoints_send_report(0x07);
+
     LOG_INF("Control+Up sequence complete - Mission Control should appear!");
 }
 
@@ -84,13 +118,17 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         float yMovement = currentAvgY - initialAvgY;
 
         LOG_DBG("Three finger Y movement: initial_avg=%.1f, current_avg=%.1f, movement=%.1f",
-                initialAvgY, currentAvgY, yMovement);
+                (double)initialAvgY, (double)currentAvgY, (double)yMovement);
 
-        // Detect significant downward movement (swipe down)
-        if (yMovement > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
-            LOG_INF("*** THREE FINGER SWIPE DOWN -> CONTROL+UP ***");
+        // Detect significant downward movement (swipe down) OR upward movement (swipe up)
+        if (fabsf(yMovement) > TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST) {
+            if (yMovement > 0) {
+                LOG_INF("*** THREE FINGER SWIPE DOWN -> MISSION CONTROL ***");
+            } else {
+                LOG_INF("*** THREE FINGER SWIPE UP -> MISSION CONTROL ***");
+            }
 
-            // Send Control+Up
+            // Send Control+Up for Mission Control
             send_control_up();
 
             // Mark gesture as complete
@@ -98,7 +136,7 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
             global_gesture_cooldown = current_time;
             state->threeFingersPressed = false;
 
-            LOG_INF("Control+Up gesture complete - cooldown active for 1000ms");
+            LOG_INF("Mission Control gesture complete - cooldown active for 1000ms");
             return;
         }
     }
