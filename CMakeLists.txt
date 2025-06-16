@@ -18,7 +18,6 @@ if(CONFIG_IQS5XX)
       src/single_finger.c
       src/two_finger.c
       src/three_finger.c
-      # src/debug_helpers.c
       src/trackpad_keyboard_events.c
     )
 

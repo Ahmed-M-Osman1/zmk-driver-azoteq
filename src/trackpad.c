@@ -1,4 +1,4 @@
-// src/trackpad.c - Fixed version with proper gesture mappings
+// src/trackpad.c - OPTIMIZED modular version with full gesture support
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -21,90 +21,93 @@ static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 static int64_t last_event_time = 0; // For rate-limiting
 
-// Keep existing send_input_event for mouse events (unchanged)
+// Optimized input event sending
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     event_count++;
-    LOG_INF("INPUT EVENT #%d: type=%d, code=%d, value=%d, sync=%d",
-            event_count, type, code, value, sync);
+    // REDUCED logging - only log important events
+    if (type == INPUT_EV_KEY) {
+        LOG_INF("CLICK #%d: btn=%d, val=%d", event_count, code, value);
+    } else if (abs(value) > 5) { // Only log significant movements
+        LOG_DBG("MOVE #%d: type=%d, code=%d, val=%d", event_count, type, code, value);
+    }
 
     if (trackpad_device) {
         int ret = input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
         if (ret < 0) {
-            LOG_ERR("Failed to send input event: %d", ret);
-        } else {
-            LOG_DBG("Input event sent successfully");
+            LOG_ERR("Input event failed: %d", ret);
         }
     } else {
-        LOG_ERR("Trackpad device is NULL - cannot send input events");
+        LOG_ERR("No trackpad device");
     }
 }
 
+// Optimized trigger handler with rate limiting and fast processing
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
     int64_t current_time = k_uptime_get();
 
-    // Rate-limit to 50ms between events
-    if (current_time - last_event_time < 50) {
-        LOG_DBG("Skipping trigger #%d: too soon (%lld ms since last event)",
-                trigger_count + 1, current_time - last_event_time);
-        return;
+    // OPTIMIZED: Rate-limit to 20ms (50Hz max) to prevent lag while maintaining responsiveness
+    if (current_time - last_event_time < 20) {
+        return; // Skip this event
     }
     last_event_time = current_time;
 
     trigger_count++;
-    LOG_DBG("=== TRIGGER #%d ===", trigger_count);
-    LOG_INF("Raw data: fingers=%d, gestures0=0x%02x, gestures1=0x%02x, rx=%d, ry=%d",
-            data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
 
-    for (int i = 0; i < data->finger_count && i < 5; i++) {
-        if (data->fingers[i].strength > 0) {
-            LOG_DBG("Finger %d: pos=(%d,%d), strength=%d, area=%d",
-                    i, data->fingers[i].ax, data->fingers[i].ay,
-                    data->fingers[i].strength, data->fingers[i].area);
-        }
+    // REDUCED logging - only log when finger count changes or gestures detected
+    static uint8_t last_logged_fingers = 255;
+    if (data->finger_count != last_logged_fingers || data->gestures0 || data->gestures1) {
+        LOG_INF("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
+                trigger_count, data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
+        last_logged_fingers = data->finger_count;
     }
 
+    // FAST gesture processing - direct switch without complex logic
     switch (data->finger_count) {
         case 0:
+            // IMMEDIATE cleanup - no delays
             reset_single_finger_state(&g_gesture_state);
             reset_two_finger_state(&g_gesture_state);
             reset_three_finger_state(&g_gesture_state);
             break;
 
         case 1:
-            reset_two_finger_state(&g_gesture_state);
-            reset_three_finger_state(&g_gesture_state);
+            // Only reset others if they were active
+            if (g_gesture_state.twoFingerActive) reset_two_finger_state(&g_gesture_state);
+            if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
             handle_single_finger_gestures(dev, data, &g_gesture_state);
             break;
 
         case 2:
-            reset_single_finger_state(&g_gesture_state);
-            reset_three_finger_state(&g_gesture_state);
+            // Only reset others if they were active
+            if (g_gesture_state.isDragging) reset_single_finger_state(&g_gesture_state);
+            if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
             handle_two_finger_gestures(dev, data, &g_gesture_state);
             break;
 
         case 3:
-            reset_single_finger_state(&g_gesture_state);
-            reset_two_finger_state(&g_gesture_state);
+            // Only reset others if they were active
+            if (g_gesture_state.isDragging) reset_single_finger_state(&g_gesture_state);
+            if (g_gesture_state.twoFingerActive) reset_two_finger_state(&g_gesture_state);
             handle_three_finger_gestures(dev, data, &g_gesture_state);
             break;
 
         default:
+            // 4+ fingers - reset all
             reset_single_finger_state(&g_gesture_state);
             reset_two_finger_state(&g_gesture_state);
             reset_three_finger_state(&g_gesture_state);
             break;
     }
 
+    // Update finger count ONLY when it changes
     if (g_gesture_state.lastFingerCount != data->finger_count) {
-        LOG_INF("Finger count changed: %d -> %d",
-                g_gesture_state.lastFingerCount, data->finger_count);
         g_gesture_state.lastFingerCount = data->finger_count;
     }
 }
 
 static int trackpad_init(void) {
-    LOG_INF("=== TRACKPAD GESTURE HANDLER INIT START ===");
+    LOG_INF("=== OPTIMIZED MODULAR TRACKPAD INIT START ===");
 
     trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
     if (trackpad == NULL) {
@@ -123,23 +126,16 @@ static int trackpad_init(void) {
         return ret;
     }
 
+    // OPTIMIZED: Initialize gesture state with performance settings
     memset(&g_gesture_state, 0, sizeof(g_gesture_state));
-    g_gesture_state.mouseSensitivity = 200;
-    LOG_INF("Initialized gesture state");
+    g_gesture_state.mouseSensitivity = 200; // Match your overlay sensitivity
+    LOG_INF("Initialized optimized gesture state");
 
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
     if(err) {
         LOG_ERR("Failed to set trigger handler: %d", err);
         return -EINVAL;
     }
-    LOG_INF("Trigger handler set successfully");
-
-    LOG_INF("=== TRACKPAD GESTURE HANDLER INIT COMPLETE ===");
-    LOG_INF("Supported gestures:");
-    LOG_INF("  1 finger: tap (left click), tap-hold (drag), movement");
-    LOG_INF("  2 finger: tap (right click), scroll, PINCH-TO-ZOOM (Ctrl+Plus/Minus)");
-    LOG_INF("  3 finger: tap (middle click), swipe up/down (Mission Control)");
-
     return 0;
 }
 

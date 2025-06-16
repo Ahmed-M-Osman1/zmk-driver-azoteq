@@ -9,10 +9,8 @@ LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
     bool hasGesture = false;
 
-    // Handle single finger hardware gestures FIRST (prioritize hardware detection)
+    // OPTIMIZED: Handle hardware gestures FIRST (immediate response)
     if (data->gestures0 && data->finger_count == 1) {
-        LOG_DBG("Single finger gesture detected: 0x%02x", data->gestures0);
-
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
                 // Only handle single tap if we're not already dragging
@@ -21,51 +19,38 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
                     LOG_INF("*** SINGLE TAP -> LEFT CLICK ***");
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
-                } else {
-                    LOG_DBG("Ignoring single tap - already dragging");
                 }
                 break;
 
             case GESTURE_TAP_AND_HOLD:
                 // IMMEDIATE drag start - no delays!
                 if (!state->isDragging) {
-                    LOG_INF("*** TAP AND HOLD -> IMMEDIATE DRAG START ***");
+                    LOG_INF("*** TAP AND HOLD -> DRAG START ***");
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
                     state->isDragging = true;
                     state->dragStartSent = true;
-                    hasGesture = true;
-                } else {
-                    // We're already dragging, don't send more button presses
-                    LOG_DBG("Already dragging, continuing...");
-                    hasGesture = true; // Still a gesture, just continuing
                 }
-                break;
-
-            default:
-                LOG_DBG("Unknown single finger gesture0: 0x%02x", data->gestures0);
+                hasGesture = true; // Mark as handled even if already dragging
                 break;
         }
     }
 
-    // Movement handling - ALWAYS process movement for single finger
+    // OPTIMIZED: Movement handling - always process for single finger
     if (data->finger_count == 1) {
         float sensMp = (float)state->mouseSensitivity / 128.0F;
 
-        // Process movement if we have any relative movement data
+        // Process movement if we have any
         if (data->rx != 0 || data->ry != 0) {
-            // Accumulate movement - CORRECT axis mapping
-            state->accumPos.x += -data->rx * sensMp;  // Invert X for natural feel
-            state->accumPos.y += -data->ry * sensMp;  // Invert Y for natural feel
+            // OPTIMIZED: Direct accumulation with correct axis mapping
+            state->accumPos.x += -data->rx * sensMp;
+            state->accumPos.y += -data->ry * sensMp;
 
             int16_t xp = (int16_t)state->accumPos.x;
             int16_t yp = (int16_t)state->accumPos.y;
 
-            // LOWER threshold for immediate response
+            // OPTIMIZED: Lower threshold for immediate response (0.3 instead of 0.5)
             if (fabsf(state->accumPos.x) >= 0.3f || fabsf(state->accumPos.y) >= 0.3f) {
-                LOG_DBG("Mouse movement: rx=%d,ry=%d -> move=%d,%d (dragging=%d)",
-                        data->rx, data->ry, xp, yp, state->isDragging);
-
-                // Send movement events (works both for normal movement and drag)
+                // Send movement events (works for both normal movement and drag)
                 send_input_event(INPUT_EV_REL, INPUT_REL_X, xp, false);
                 send_input_event(INPUT_EV_REL, INPUT_REL_Y, yp, true);
 
@@ -78,18 +63,16 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 }
 
 void reset_single_finger_state(struct gesture_state *state) {
-    // Handle end of drag operation - IMMEDIATE release
+    // OPTIMIZED: IMMEDIATE drag release - this fixes the "stuck drag" issue
     if (state->isDragging && state->dragStartSent) {
-        LOG_INF("*** DRAG END - IMMEDIATE BUTTON RELEASE ***");
+        LOG_INF("*** DRAG END - IMMEDIATE RELEASE ***");
         send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
         state->isDragging = false;
         state->dragStartSent = false;
     }
 
-    // Reset accumulated position
+    // OPTIMIZED: Reset accumulated position only if needed
     if (state->accumPos.x != 0 || state->accumPos.y != 0) {
-        LOG_DBG("Resetting accumulated position: was %.2f,%.2f",
-                (double)state->accumPos.x, (double)state->accumPos.y);
         state->accumPos.x = 0;
         state->accumPos.y = 0;
     }
