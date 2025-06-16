@@ -317,6 +317,8 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             // No gesture detected yet, continue waiting
             break;
     }
+
+    // REMOVED: debug_two_finger_positions(data, state); // This was causing major lag!
 }
 
 void reset_two_finger_state(struct gesture_state *state) {

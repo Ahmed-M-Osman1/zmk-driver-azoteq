@@ -31,10 +31,10 @@ struct gesture_state {
     bool threeFingersPressed;
     int64_t threeFingerPressTime;
     struct {
-        int16_t x; // Changed from uint16_t to int16_t
-        int16_t y; // Changed from uint16_t to int16_t
+        int16_t x;
+        int16_t y;
     } threeFingerStartPos[3];
-    bool gestureTriggered; // Added to track if a gesture was triggered
+    bool gestureTriggered;
 
     // General state
     uint8_t lastFingerCount;
@@ -43,11 +43,11 @@ struct gesture_state {
 
 // Configuration constants
 #define TRACKPAD_THREE_FINGER_CLICK_TIME    200
-#define TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST 30   // Reduced from 50
+#define TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST 30
 #define SCROLL_REPORT_DISTANCE              15
-#define MOVEMENT_THRESHOLD                  0.5f
-#define ZOOM_THRESHOLD                      80    // Not used in new step-based system
-#define ZOOM_SENSITIVITY                    40    // Pixels per zoom step (lower = more sensitive)
+#define MOVEMENT_THRESHOLD                  0.3f  // Reduced for faster response
+#define ZOOM_THRESHOLD                      80
+#define ZOOM_SENSITIVITY                    40
 
 // Function declarations for each gesture handler file
 
@@ -66,9 +66,6 @@ void reset_three_finger_state(struct gesture_state *state);
 // Input event helper (defined in trackpad.c) - for mouse events
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync);
 
-// NEW: Keyboard event helpers using input events (defined in trackpad.c)
+// Keyboard event helpers using input events (defined in trackpad.c)
 void send_keyboard_key(uint16_t keycode);
 void send_keyboard_combo(uint16_t modifier, uint16_t keycode);
-
-// Debug helpers (defined in debug_helpers.c)
-void debug_two_finger_positions(const struct iqs5xx_rawdata *data, struct gesture_state *state);
