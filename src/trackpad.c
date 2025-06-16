@@ -41,22 +41,26 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     }
 }
 
-// Optimized trigger handler with rate limiting and fast processing
+// Optimized trigger handler with GESTURE PRIORITY
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
     int64_t current_time = k_uptime_get();
 
-    // OPTIMIZED: Rate-limit to 20ms (50Hz max) to prevent lag while maintaining responsiveness
-    if (current_time - last_event_time < 20) {
-        return; // Skip this event
+    trigger_count++;
+
+    // CRITICAL: ALWAYS process gestures immediately, regardless of rate limiting
+    bool has_gesture = (data->gestures0 != 0) || (data->gestures1 != 0);
+    bool finger_count_changed = (g_gesture_state.lastFingerCount != data->finger_count);
+
+    // Rate limit ONLY movement events, NEVER gesture events
+    if (!has_gesture && !finger_count_changed && (current_time - last_event_time < 20)) {
+        return; // Skip only movement-only events
     }
     last_event_time = current_time;
 
-    trigger_count++;
-
     // REDUCED logging - only log when finger count changes or gestures detected
     static uint8_t last_logged_fingers = 255;
-    if (data->finger_count != last_logged_fingers || data->gestures0 || data->gestures1) {
+    if (finger_count_changed || has_gesture) {
         LOG_INF("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
                 trigger_count, data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
         last_logged_fingers = data->finger_count;
