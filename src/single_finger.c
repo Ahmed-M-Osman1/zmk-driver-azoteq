@@ -60,8 +60,6 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
                     }
                     hasGesture = true;
                 }
-                break;, 0, true);
-                }
                 break;
 
             case GESTURE_TAP_AND_HOLD:
@@ -73,6 +71,10 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
                     state->dragStartSent = true;
                 }
                 hasGesture = true; // Mark as handled even if already dragging
+                break;
+
+            default:
+                LOG_DBG("Unknown single finger gesture: 0x%02x", data->gestures0);
                 break;
         }
     }
