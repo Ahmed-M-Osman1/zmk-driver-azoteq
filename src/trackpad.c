@@ -1,4 +1,3 @@
-// src/trackpad.c - FIXED modular version with proper gesture flow
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -41,159 +40,74 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     }
 }
 
-// FIXED: Direct hardware gesture processing like the simple version
+// SIMPLE: Clean modular processing - let each module handle its own gestures
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
     int64_t current_time = k_uptime_get();
 
     trigger_count++;
 
-    // FIXED: Handle hardware gestures DIRECTLY first, just like the simple version
-    bool gesture_handled = false;
+    // Log important events
+    bool has_gesture = (data->gestures0 != 0) || (data->gestures1 != 0);
+    bool finger_count_changed = (g_gesture_state.lastFingerCount != data->finger_count);
 
-    if (data->gestures0 || data->gestures1) {
-        LOG_INF("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
-                trigger_count, data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
-
-        // Handle gestures1 (two-finger gestures) - DIRECT like simple version
-        if (data->gestures1) {
-            switch (data->gestures1) {
-                case GESTURE_TWO_FINGER_TAP:
-                    LOG_INF("*** DIRECT TWO FINGER TAP -> RIGHT CLICK ***");
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 1, false);
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 0, true);
-                    gesture_handled = true;
-                    break;
-
-                case GESTURE_SCROLLG:
-                    LOG_INF("*** DIRECT SCROLL: rx=%d, ry=%d ***", data->rx, data->ry);
-                    int8_t scroll_y = -data->ry / 15;
-                    int8_t scroll_x = data->rx / 15;
-
-                    if (scroll_y != 0) {
-                        send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, scroll_y, false);
-                    }
-                    if (scroll_x != 0) {
-                        send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, scroll_x, true);
-                    }
-                    gesture_handled = true;
-                    break;
-            }
-        }
-
-        // Handle gestures0 (single-finger gestures) - DIRECT like simple version
-        if (data->gestures0) {
-            switch (data->gestures0) {
-                case GESTURE_SINGLE_TAP:
-                    // DIRECT single tap handling - no complex state checking
-                    if (!g_gesture_state.isDragging) {
-                        LOG_INF("*** DIRECT SINGLE TAP -> LEFT CLICK ***");
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 1, false);
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 0, true);
-                        gesture_handled = true;
-                    }
-                    break;
-
-                case GESTURE_TAP_AND_HOLD:
-                    // DIRECT drag start
-                    if (!g_gesture_state.isDragging) {
-                        LOG_INF("*** DIRECT TAP AND HOLD -> DRAG START ***");
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 1, true);
-                        g_gesture_state.isDragging = true;
-                        g_gesture_state.dragStartSent = true;
-                        gesture_handled = true;
-                    }
-                    break;
-            }
-        }
-    } else {
-        // Only log finger count changes when no gestures
-        static uint8_t last_logged_fingers = 255;
-        if (g_gesture_state.lastFingerCount != data->finger_count) {
-            LOG_INF("TRIGGER #%d: fingers=%d->%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
-                    trigger_count, g_gesture_state.lastFingerCount, data->finger_count,
-                    data->gestures0, data->gestures1, data->rx, data->ry);
-        }
-    }
-
-    // Rate limit ONLY non-gesture events
-    if (!gesture_handled && (current_time - last_event_time < 20)) {
+    // Rate limit ONLY movement events, NEVER gesture events
+    if (!has_gesture && !finger_count_changed && (current_time - last_event_time < 20)) {
         return;
     }
     last_event_time = current_time;
 
-    // FIXED: Finger count transitions - handle resets immediately
+    // Log when something interesting happens
+    if (finger_count_changed || has_gesture) {
+        LOG_INF("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
+                trigger_count, data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
+    }
+
+    // CLEAN: Simple finger count-based gesture routing
     switch (data->finger_count) {
         case 0:
-            // IMMEDIATE cleanup when all fingers lifted
-            if (g_gesture_state.isDragging) {
-                LOG_INF("*** DRAG END - IMMEDIATE RELEASE ***");
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 0, true);
-                g_gesture_state.isDragging = false;
-                g_gesture_state.dragStartSent = false;
-            }
+            // IMMEDIATE cleanup - no delays
             reset_single_finger_state(&g_gesture_state);
             reset_two_finger_state(&g_gesture_state);
             reset_three_finger_state(&g_gesture_state);
             break;
 
         case 1:
-            // Reset other gestures, handle single finger
+            // Only reset others if they were active
             if (g_gesture_state.twoFingerActive) reset_two_finger_state(&g_gesture_state);
             if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
-
-            // Only call modular handler if no direct gesture was processed
-            if (!gesture_handled) {
-                handle_single_finger_gestures(dev, data, &g_gesture_state);
-            }
+            // Handle single finger gestures (including hardware taps)
+            handle_single_finger_gestures(dev, data, &g_gesture_state);
             break;
 
         case 2:
-            // Reset other gestures, handle two finger (if not already handled directly)
-            if (g_gesture_state.isDragging && !gesture_handled) {
-                LOG_INF("*** DRAG END - TWO FINGERS ***");
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 0, true);
-                g_gesture_state.isDragging = false;
-                g_gesture_state.dragStartSent = false;
-                reset_single_finger_state(&g_gesture_state);
-            }
+            // Only reset others if they were active
+            if (g_gesture_state.isDragging) reset_single_finger_state(&g_gesture_state);
             if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
-
-            // Only call modular handler if no direct gesture was processed
-            if (!gesture_handled) {
-                handle_two_finger_gestures(dev, data, &g_gesture_state);
-            }
+            // Handle two finger gestures (including hardware taps and scrolling)
+            handle_two_finger_gestures(dev, data, &g_gesture_state);
             break;
 
         case 3:
-            // Reset other gestures, handle three finger
-            if (g_gesture_state.isDragging) {
-                LOG_INF("*** DRAG END - THREE FINGERS ***");
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 0, true);
-                g_gesture_state.isDragging = false;
-                g_gesture_state.dragStartSent = false;
-                reset_single_finger_state(&g_gesture_state);
-            }
+            // Only reset others if they were active
+            if (g_gesture_state.isDragging) reset_single_finger_state(&g_gesture_state);
             if (g_gesture_state.twoFingerActive) reset_two_finger_state(&g_gesture_state);
-
+            // Handle three finger gestures
             handle_three_finger_gestures(dev, data, &g_gesture_state);
             break;
 
         default:
             // 4+ fingers - reset all
-            if (g_gesture_state.isDragging) {
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 0, true);
-                g_gesture_state.isDragging = false;
-                g_gesture_state.dragStartSent = false;
-            }
             reset_single_finger_state(&g_gesture_state);
             reset_two_finger_state(&g_gesture_state);
             reset_three_finger_state(&g_gesture_state);
             break;
     }
 
-    // Update finger count
-    g_gesture_state.lastFingerCount = data->finger_count;
+    // Update finger count ONLY when it changes
+    if (g_gesture_state.lastFingerCount != data->finger_count) {
+        g_gesture_state.lastFingerCount = data->finger_count;
+    }
 }
 
 static int trackpad_init(void) {
