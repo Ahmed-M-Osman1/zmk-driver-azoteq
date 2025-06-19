@@ -1,4 +1,4 @@
-// src/trackpad_keyboard_events.c - FIXED VERSION with 0x07
+// src/trackpad_keyboard_events.c - FIXED VERSION with correct types
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -16,8 +16,8 @@ int trackpad_keyboard_init(const struct device *input_dev) {
     return 0;
 }
 
-// FIXED: Use 0x07 for keyboard HID usage page
-static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* description, int hold_time) {
+// FIXED: Use correct zmk_key_t type instead of uint8_t
+static int send_zoom_combo(zmk_key_t modifier, zmk_key_t key, const char* description, int hold_time) {
     LOG_INF("*** SENDING %s (mod:0x%02x + key:0x%02x) ***", description, modifier, key);
 
     // Clear any existing state - USE 0x07
@@ -29,25 +29,29 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
     }
     k_msleep(50);
 
-    // Press modifier first
-    ret = zmk_hid_keyboard_press(modifier);
-    if (ret < 0) {
-        LOG_ERR("Failed to press modifier %d: %d", modifier, ret);
-        return ret;
+    // Press modifier first (if not zero)
+    if (modifier != 0) {
+        ret = zmk_hid_keyboard_press(modifier);
+        if (ret < 0) {
+            LOG_ERR("Failed to press modifier %d: %d", modifier, ret);
+            return ret;
+        }
+        ret = zmk_endpoints_send_report(0x07);
+        if (ret < 0) {
+            LOG_ERR("Failed to send modifier report: %d", ret);
+            return ret;
+        }
+        k_msleep(30);
     }
-    ret = zmk_endpoints_send_report(0x07);
-    if (ret < 0) {
-        LOG_ERR("Failed to send modifier report: %d", ret);
-        return ret;
-    }
-    k_msleep(30);
 
     // Press main key
     ret = zmk_hid_keyboard_press(key);
     if (ret < 0) {
         LOG_ERR("Failed to press key %d: %d", key, ret);
-        zmk_hid_keyboard_release(modifier);
-        zmk_endpoints_send_report(0x07);
+        if (modifier != 0) {
+            zmk_hid_keyboard_release(modifier);
+            zmk_endpoints_send_report(0x07);
+        }
         return ret;
     }
     ret = zmk_endpoints_send_report(0x07);
@@ -68,16 +72,18 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
     }
     k_msleep(20);
 
-    // Release modifier
-    ret = zmk_hid_keyboard_release(modifier);
-    if (ret < 0) {
-        LOG_ERR("Failed to release modifier: %d", ret);
+    // Release modifier (if not zero)
+    if (modifier != 0) {
+        ret = zmk_hid_keyboard_release(modifier);
+        if (ret < 0) {
+            LOG_ERR("Failed to release modifier: %d", ret);
+        }
+        ret = zmk_endpoints_send_report(0x07);
+        if (ret < 0) {
+            LOG_ERR("Failed to send modifier release report: %d", ret);
+        }
+        k_msleep(30);
     }
-    ret = zmk_endpoints_send_report(0x07);
-    if (ret < 0) {
-        LOG_ERR("Failed to send modifier release report: %d", ret);
-    }
-    k_msleep(30);
 
     // Final clear
     zmk_hid_keyboard_clear();

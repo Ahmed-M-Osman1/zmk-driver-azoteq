@@ -1,3 +1,4 @@
+// Fixed two_finger.c - Simpler tap detection
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -102,6 +103,15 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 void reset_two_finger_state(struct gesture_state *state) {
     if (two_finger_state.active) {
         LOG_INF("=== TWO FINGER SESSION END ===");
+
+        int64_t session_time = k_uptime_get() - two_finger_state.start_time;
+        bool quick_release = (session_time < 300);  // Released within 300ms
+        bool small_movement = (two_finger_state.total_movement[0] < TAP_MOVEMENT_THRESHOLD &&
+                              two_finger_state.total_movement[1] < TAP_MOVEMENT_THRESHOLD);
+
+void reset_two_finger_state(struct gesture_state *state) {
+    if (two_finger_state.active) {
+        LOG_DBG("Two finger session end");
 
         // SIMPLIFIED: Check for tap only if no significant movement AND quick release
         int64_t session_time = k_uptime_get() - two_finger_state.start_time;
