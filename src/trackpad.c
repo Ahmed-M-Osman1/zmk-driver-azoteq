@@ -1,4 +1,3 @@
-// src/trackpad.c - OPTIMIZED modular version with full gesture support
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -41,28 +40,58 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     }
 }
 
-// Optimized trigger handler with GESTURE PRIORITY
+// Check if current data contains click-worthy events that should bypass rate limiting
+static bool has_click_events(const struct iqs5xx_rawdata *data, const struct gesture_state *state) {
+    // 1. Hardware gestures that generate clicks
+    if (data->gestures0 & (GESTURE_SINGLE_TAP | GESTURE_TAP_AND_HOLD)) {
+        return true;
+    }
+
+    // 2. Two-finger tap detection (finger count transition 2->0 quickly)
+    if (state->lastFingerCount == 2 && data->finger_count == 0 && state->twoFingerActive) {
+        return true;
+    }
+
+    // 3. Three-finger gesture events
+    if (data->finger_count == 3 || (state->lastFingerCount == 3 && data->finger_count == 0)) {
+        return true;
+    }
+
+    // 4. Any gesture flags that could trigger clicks
+    if (data->gestures1 & GESTURE_TWO_FINGER_TAP) {
+        return true;
+    }
+
+    return false;
+}
+
+// UPDATED trigger handler with CLICK PRIORITY - NO RATE LIMITING for clicks
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
     int64_t current_time = k_uptime_get();
 
     trigger_count++;
 
-    // CRITICAL: ALWAYS process gestures immediately, regardless of rate limiting
+    // CRITICAL: Check for click events first
+    bool has_clicks = has_click_events(data, &g_gesture_state);
     bool has_gesture = (data->gestures0 != 0) || (data->gestures1 != 0);
     bool finger_count_changed = (g_gesture_state.lastFingerCount != data->finger_count);
 
-    // Rate limit ONLY movement events, NEVER gesture events
-    if (!has_gesture && !finger_count_changed && (current_time - last_event_time < 20)) {
-        return; // Skip only movement-only events
+    // UPDATED RATE LIMITING: Skip rate limiting for clicks, gestures, and finger count changes
+    if (!has_clicks && !has_gesture && !finger_count_changed &&
+        (current_time - last_event_time < 20)) {
+        return; // Skip only pure movement events
     }
     last_event_time = current_time;
 
-    // REDUCED logging - only log when finger count changes or gestures detected
+    // ENHANCED logging - show when we bypass rate limiting for clicks
     static uint8_t last_logged_fingers = 255;
-    if (finger_count_changed || has_gesture) {
-        LOG_INF("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
-                trigger_count, data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
+    if (finger_count_changed || has_gesture || has_clicks) {
+        const char* reason = has_clicks ? " [CLICK-PRIORITY]" :
+                           has_gesture ? " [GESTURE]" : " [FINGER-CHANGE]";
+        LOG_INF("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d%s",
+                trigger_count, data->finger_count, data->gestures0, data->gestures1,
+                data->rx, data->ry, reason);
         last_logged_fingers = data->finger_count;
     }
 
@@ -133,7 +162,7 @@ static int trackpad_init(void) {
     // OPTIMIZED: Initialize gesture state with performance settings
     memset(&g_gesture_state, 0, sizeof(g_gesture_state));
     g_gesture_state.mouseSensitivity = 200; // Match your overlay sensitivity
-    LOG_INF("Initialized optimized gesture state");
+    LOG_INF("Initialized optimized gesture state - NO RATE LIMIT for clicks");
 
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
     if(err) {

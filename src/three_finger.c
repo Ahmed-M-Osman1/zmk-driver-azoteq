@@ -13,6 +13,9 @@ LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 // Global cooldown to prevent gesture re-triggering
 static int64_t global_gesture_cooldown = 0;
 
+// Click processing flag - prevent movement processing after click
+static bool three_finger_click_processed = false;
+
 // Calculate average Y position of fingers
 static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_count) {
     float sum = 0;
@@ -24,7 +27,7 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
 
 // Send Control+Up key combination for Mission Control
 static void send_control_up(void) {
-    LOG_INF("*** SENDING CONTROL+UP (MISSION CONTROL) ***");
+    LOG_INF("*** IMMEDIATE CONTROL+UP (MISSION CONTROL) ***");
 
     // Clear any existing HID state first
     zmk_hid_keyboard_clear();
@@ -63,9 +66,9 @@ static void send_control_up(void) {
     LOG_INF("Control+Up sequence complete - Mission Control should appear!");
 }
 
-// NEW: Send Control+Down for Application Windows (App Exposé)
+// Send Control+Down for Application Windows (App Exposé)
 static void send_control_down(void) {
-    LOG_INF("*** SENDING CONTROL+DOWN (APPLICATION WINDOWS) ***");
+    LOG_INF("*** IMMEDIATE CONTROL+DOWN (APPLICATION WINDOWS) ***");
 
     // Clear any existing HID state first
     zmk_hid_keyboard_clear();
@@ -112,6 +115,10 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
     int64_t current_time = k_uptime_get();
 
+    // ============================================================================
+    // PRIORITY 1: COOLDOWN CHECK - Prevent rapid re-triggering
+    // ============================================================================
+
     // Check global cooldown - block all processing if too recent
     if (current_time - global_gesture_cooldown < 1000) { // 1 second cooldown
         LOG_DBG("Three finger gesture blocked: in cooldown period (%lld ms remaining)",
@@ -124,6 +131,7 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         state->threeFingerPressTime = current_time;
         state->threeFingersPressed = true;
         state->gestureTriggered = false;
+        three_finger_click_processed = false; // Reset click processing flag
 
         // Store initial positions for swipe detection
         for (int i = 0; i < 3; i++) {
@@ -139,8 +147,12 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         return;
     }
 
-    // Skip if gesture already triggered
-    if (state->gestureTriggered) {
+    // ============================================================================
+    // PRIORITY 2: IMMEDIATE GESTURE PROCESSING - Skip if already triggered
+    // ============================================================================
+
+    // Skip if gesture already triggered to prevent multiple actions
+    if (state->gestureTriggered || three_finger_click_processed) {
         return;
     }
 
@@ -161,37 +173,47 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
         // Detect significant movement (50px threshold for better reliability)
         if (fabsf(yMovement) > 50.0f) {
+            // ============================================================================
+            // IMMEDIATE GESTURE EXECUTION - No delays or additional processing
+            // ============================================================================
+
             if (yMovement > 0) {
                 // SWIPE DOWN = Application Windows (App Exposé)
-                LOG_INF("*** THREE FINGER SWIPE DOWN -> APPLICATION WINDOWS ***");
+                LOG_INF("*** IMMEDIATE THREE FINGER SWIPE DOWN -> APPLICATION WINDOWS ***");
                 send_control_down();
             } else {
                 // SWIPE UP = Mission Control
-                LOG_INF("*** THREE FINGER SWIPE UP -> MISSION CONTROL ***");
+                LOG_INF("*** IMMEDIATE THREE FINGER SWIPE UP -> MISSION CONTROL ***");
                 send_control_up();
             }
 
-            // Mark gesture as complete
+            // Mark gesture as complete and processed IMMEDIATELY
             state->gestureTriggered = true;
+            three_finger_click_processed = true;
             global_gesture_cooldown = current_time;
             state->threeFingersPressed = false;
 
             LOG_INF("Three finger gesture complete - cooldown active for 1000ms");
-            return;
+            return; // IMMEDIATE return - no further processing
         }
     }
 }
 
 void reset_three_finger_state(struct gesture_state *state) {
+    // ============================================================================
+    // PRIORITY CLICK PROCESSING: Handle three finger tap IMMEDIATELY
+    // ============================================================================
+
     // Handle three finger click (if fingers released quickly without swipe)
-    if (state->threeFingersPressed && !state->gestureTriggered &&
+    if (state->threeFingersPressed && !state->gestureTriggered && !three_finger_click_processed &&
         k_uptime_get() - state->threeFingerPressTime < TRACKPAD_THREE_FINGER_CLICK_TIME) {
 
         // Check if we're in gesture cooldown
         if (k_uptime_get() - global_gesture_cooldown > 500) {
-            LOG_INF("*** THREE FINGER TAP -> MIDDLE CLICK ***");
+            LOG_INF("*** IMMEDIATE THREE FINGER TAP -> MIDDLE CLICK ***");
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
+            three_finger_click_processed = true; // Mark as processed
         } else {
             LOG_DBG("Skipping three finger tap - in cooldown");
         }
@@ -200,6 +222,7 @@ void reset_three_finger_state(struct gesture_state *state) {
     if (state->threeFingersPressed) {
         state->threeFingersPressed = false;
         state->gestureTriggered = false;
+        three_finger_click_processed = false; // Reset for next session
         LOG_DBG("Three fingers released - ready for next gesture");
     }
 }

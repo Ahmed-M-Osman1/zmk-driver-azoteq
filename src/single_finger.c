@@ -22,70 +22,81 @@ static void double_tap_timeout_handler(struct k_work *work) {
 }
 
 void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
-    bool hasGesture = false;
+    // ============================================================================
+    // PRIORITY 1: CLICK PROCESSING - Handle ALL click events IMMEDIATELY FIRST
+    // ============================================================================
 
-    // CRITICAL: Handle hardware gestures IMMEDIATELY when detected
     if (data->gestures0) {
-        LOG_INF("Hardware gesture detected: 0x%02x", data->gestures0);
+        LOG_INF("*** PRIORITY CLICK PROCESSING: Hardware gesture 0x%02x ***", data->gestures0);
 
-        switch(data->gestures0) {
-            case GESTURE_SINGLE_TAP:
-                // Handle single tap regardless of finger count (tap completes after finger lift)
-                if (!state->isDragging) {
-                    int64_t current_time = k_uptime_get();
+        // Process clicks with ABSOLUTE PRIORITY - no other logic interferes
+        if (data->gestures0 & GESTURE_SINGLE_TAP) {
+            if (!state->isDragging) {
+                int64_t current_time = k_uptime_get();
 
-                    // Check for double-tap (within 400ms)
-                    if (waiting_for_double_tap && (current_time - last_tap_time) < 400) {
-                        // Double-tap detected!
-                        LOG_INF("*** DOUBLE TAP -> DOUBLE CLICK ***");
-                        k_work_cancel_delayable(&double_tap_work);
-                        waiting_for_double_tap = false;
+                // Double-tap detection with IMMEDIATE processing
+                if (waiting_for_double_tap && (current_time - last_tap_time) < 400) {
+                    // IMMEDIATE double-click
+                    LOG_INF("*** IMMEDIATE DOUBLE TAP -> DOUBLE CLICK ***");
+                    k_work_cancel_delayable(&double_tap_work);
+                    waiting_for_double_tap = false;
 
-                        // Send double-click
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, false);
-                        k_msleep(50); // Small delay between clicks
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                    // Send double-click immediately
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, false);
+                    k_msleep(50); // Small delay between clicks
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
 
-                        last_tap_time = 0; // Reset to prevent triple-tap
-                    } else {
-                        // First tap - wait for potential double-tap
-                        LOG_INF("*** FIRST TAP - WAITING FOR DOUBLE ***");
-                        last_tap_time = current_time;
-                        waiting_for_double_tap = true;
+                    last_tap_time = 0; // Reset to prevent triple-tap
+                } else {
+                    // First tap - IMMEDIATE processing setup
+                    LOG_INF("*** IMMEDIATE FIRST TAP - SETTING UP DOUBLE-TAP DETECTION ***");
+                    last_tap_time = current_time;
+                    waiting_for_double_tap = true;
 
-                        // Schedule single-click if no double-tap comes
-                        k_work_schedule(&double_tap_work, K_MSEC(400));
-                    }
-                    hasGesture = true;
+                    // Schedule single-click if no double-tap comes
+                    k_work_schedule(&double_tap_work, K_MSEC(400));
                 }
-                break;
+            }
 
-            case GESTURE_TAP_AND_HOLD:
-                // IMMEDIATE drag start - no delays!
-                if (!state->isDragging) {
-                    LOG_INF("*** TAP AND HOLD -> DRAG START ***");
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                    state->isDragging = true;
-                    state->dragStartSent = true;
-                }
-                hasGesture = true; // Mark as handled even if already dragging
-                break;
+            // RETURN IMMEDIATELY after processing click - don't process movement
+            return;
+        }
 
-            default:
-                LOG_DBG("Unknown single finger gesture: 0x%02x", data->gestures0);
-                break;
+        if (data->gestures0 & GESTURE_TAP_AND_HOLD) {
+            // IMMEDIATE drag start with ABSOLUTE PRIORITY
+            if (!state->isDragging) {
+                LOG_INF("*** IMMEDIATE TAP AND HOLD -> DRAG START ***");
+                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                state->isDragging = true;
+                state->dragStartSent = true;
+            }
+
+            // RETURN IMMEDIATELY after processing click
+            return;
+        }
+
+        // Handle other single finger gestures
+        if (data->gestures0 & (GESTURE_SWIPE_X_NEG | GESTURE_SWIPE_X_POS |
+                               GESTURE_SWIPE_Y_NEG | GESTURE_SWIPE_Y_POS)) {
+            LOG_INF("*** IMMEDIATE SWIPE GESTURE: 0x%02x ***", data->gestures0);
+            // Could add swipe handling here if needed
+            return;
         }
     }
 
-    // OPTIMIZED: Movement handling - always process for single finger
+    // ============================================================================
+    // PRIORITY 2: MOVEMENT PROCESSING - Only if no clicks were processed above
+    // ============================================================================
+
+    // Only process movement for single finger when no clicks are active
     if (data->finger_count == 1) {
         float sensMp = (float)state->mouseSensitivity / 128.0F;
 
         // Process movement if we have any
         if (data->rx != 0 || data->ry != 0) {
-            // OPTIMIZED: Direct accumulation with correct axis mapping
+            // Direct accumulation with correct axis mapping
             state->accumPos.x += -data->rx * sensMp;
             state->accumPos.y += -data->ry * sensMp;
 
@@ -114,21 +125,22 @@ void reset_single_finger_state(struct gesture_state *state) {
         work_initialized = true;
     }
 
-    // Cancel any pending double-tap work
+    // Cancel any pending double-tap work with IMMEDIATE effect
     if (waiting_for_double_tap) {
         k_work_cancel_delayable(&double_tap_work);
         waiting_for_double_tap = false;
+        LOG_DBG("Cancelled pending double-tap detection");
     }
 
-    // OPTIMIZED: IMMEDIATE drag release - this fixes the "stuck drag" issue
+    // IMMEDIATE drag release - this fixes the "stuck drag" issue
     if (state->isDragging && state->dragStartSent) {
-        LOG_INF("*** DRAG END - IMMEDIATE RELEASE ***");
+        LOG_INF("*** IMMEDIATE DRAG END - RELEASING BUTTON ***");
         send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
         state->isDragging = false;
         state->dragStartSent = false;
     }
 
-    // OPTIMIZED: Reset accumulated position only if needed
+    // Reset accumulated position only if needed
     if (state->accumPos.x != 0 || state->accumPos.y != 0) {
         state->accumPos.x = 0;
         state->accumPos.y = 0;

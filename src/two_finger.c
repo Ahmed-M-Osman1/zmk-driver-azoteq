@@ -46,6 +46,9 @@ struct enhanced_two_finger_state {
     // Movement tracking for gesture detection
     float total_movement_x[2];  // Total X movement for each finger
     float total_movement_y[2];  // Total Y movement for each finger
+
+    // PRIORITY CLICK PROCESSING
+    bool click_processed;       // Flag to prevent movement processing after click
 } static two_finger_state = {0};
 
 // Configuration constants
@@ -159,13 +162,14 @@ static void handle_zoom_gesture(const struct iqs5xx_rawdata *data) {
     // Send zoom command if stable enough
     if (two_finger_state.stable_readings >= 1 || fabsf(distance_change) > ZOOM_THRESHOLD_PX * 2) {
         if (distance_change > 0) {
-            LOG_INF("*** ZOOM IN: %d px ***", (int)distance_change);
+            LOG_INF("*** IMMEDIATE ZOOM IN: %d px ***", (int)distance_change);
             send_trackpad_zoom_in();
         } else {
-            LOG_INF("*** ZOOM OUT: %d px ***", (int)distance_change);
+            LOG_INF("*** IMMEDIATE ZOOM OUT: %d px ***", (int)distance_change);
             send_trackpad_zoom_out();
         }
         two_finger_state.zoom_command_sent = true;
+        two_finger_state.click_processed = true; // Mark as click-like action
     }
 }
 
@@ -196,7 +200,7 @@ static void handle_scroll_gesture(const struct iqs5xx_rawdata *data) {
             scroll_x = (int)(two_finger_state.scroll_accumulator_x / SCROLL_REPORT_DISTANCE);
             two_finger_state.scroll_accumulator_x -= scroll_x * SCROLL_REPORT_DISTANCE;
 
-            LOG_INF("Horizontal scroll: %d units", scroll_x);
+            LOG_INF("*** IMMEDIATE Horizontal scroll: %d units ***", scroll_x);
             send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, -scroll_x, true);
             two_finger_state.last_scroll_time = current_time;
         }
@@ -205,7 +209,7 @@ static void handle_scroll_gesture(const struct iqs5xx_rawdata *data) {
             scroll_y = (int)(two_finger_state.scroll_accumulator_y / SCROLL_REPORT_DISTANCE);
             two_finger_state.scroll_accumulator_y -= scroll_y * SCROLL_REPORT_DISTANCE;
 
-            LOG_INF("Vertical scroll: %d units", scroll_y);
+            LOG_INF("*** IMMEDIATE Vertical scroll: %d units ***", scroll_y);
             send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, -scroll_y, true);
             two_finger_state.last_scroll_time = current_time;
         }
@@ -221,6 +225,18 @@ static void handle_scroll_gesture(const struct iqs5xx_rawdata *data) {
 void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
     if (data->finger_count != 2) {
         return;
+    }
+
+    // ============================================================================
+    // PRIORITY 1: HARDWARE CLICK PROCESSING - Handle immediately
+    // ============================================================================
+
+    if (data->gestures1 & GESTURE_TWO_FINGER_TAP) {
+        LOG_INF("*** IMMEDIATE HARDWARE TWO-FINGER TAP -> RIGHT CLICK ***");
+        send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, false);
+        send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
+        two_finger_state.click_processed = true;
+        return; // IMMEDIATE return - don't process movement
     }
 
     // Ensure we have two valid finger readings
@@ -249,6 +265,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         two_finger_state.zoom_command_sent = false;
         two_finger_state.stable_readings = 0;
         two_finger_state.last_scroll_time = current_time;
+        two_finger_state.click_processed = false; // Reset click processing flag
 
         // Store initial positions
         two_finger_state.start_pos[0].x = two_finger_state.last_pos[0].x = data->fingers[0].ax;
@@ -284,6 +301,12 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         return;
     }
 
+    // Skip movement processing if click was already processed
+    if (two_finger_state.click_processed) {
+        LOG_DBG("Skipping movement - click already processed this session");
+        return;
+    }
+
     int64_t time_since_start = current_time - two_finger_state.start_time;
 
     // Wait for stabilization before detecting gesture type
@@ -302,6 +325,10 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         }
     }
 
+    // ============================================================================
+    // PRIORITY 2: MOVEMENT PROCESSING - Only after click processing is complete
+    // ============================================================================
+
     // Handle the specific gesture
     switch (two_finger_state.gesture_type) {
         case TWO_FINGER_ZOOM:
@@ -317,26 +344,29 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             // No gesture detected yet, continue waiting
             break;
     }
-
-    // REMOVED: debug_two_finger_positions(data, state); // This was causing major lag!
 }
 
 void reset_two_finger_state(struct gesture_state *state) {
     if (two_finger_state.active) {
         LOG_INF("=== TWO FINGER SESSION END ===");
 
-        // Handle two-finger tap if no other gesture was performed
-        if (!two_finger_state.gesture_locked &&
+        // ============================================================================
+        // PRIORITY CLICK PROCESSING: Handle two-finger tap IMMEDIATELY
+        // ============================================================================
+
+        // Handle two-finger tap if no other gesture was performed and no click was processed
+        if (!two_finger_state.gesture_locked && !two_finger_state.click_processed &&
             k_uptime_get() - two_finger_state.start_time < 300) {
-            LOG_INF("*** TWO FINGER TAP -> RIGHT CLICK ***");
+            LOG_INF("*** IMMEDIATE TWO FINGER TAP -> RIGHT CLICK ***");
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, false);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
         }
 
         const char* gesture_names[] = {"NONE", "ZOOM", "VERTICAL_SCROLL", "HORIZONTAL_SCROLL"};
-        LOG_INF("Session completed: gesture=%s, zoom_sent=%d",
+        LOG_INF("Session completed: gesture=%s, zoom_sent=%d, click_processed=%d",
                 gesture_names[two_finger_state.gesture_type],
-                two_finger_state.zoom_command_sent);
+                two_finger_state.zoom_command_sent,
+                two_finger_state.click_processed);
 
         // Clear enhanced state
         memset(&two_finger_state, 0, sizeof(two_finger_state));
