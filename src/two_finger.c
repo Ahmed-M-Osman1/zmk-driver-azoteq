@@ -233,7 +233,9 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
     if (data->gestures1 & GESTURE_TWO_FINGER_TAP) {
         LOG_INF("*** IMMEDIATE HARDWARE TWO-FINGER TAP -> RIGHT CLICK ***");
-        send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, false);
+        LOG_INF("DEBUG: INPUT_BTN_1 = %d, INPUT_BTN_0 = %d, INPUT_BTN_2 = %d",
+                INPUT_BTN_1, INPUT_BTN_0, INPUT_BTN_2);
+        send_input_event(INPUT_EV_KEY, 1, 1, false);
         send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
         two_finger_state.click_processed = true;
         return; // IMMEDIATE return - don't process movement
@@ -358,7 +360,9 @@ void reset_two_finger_state(struct gesture_state *state) {
         if (!two_finger_state.gesture_locked && !two_finger_state.click_processed &&
             k_uptime_get() - two_finger_state.start_time < 300) {
             LOG_INF("*** IMMEDIATE TWO FINGER TAP -> RIGHT CLICK ***");
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, false);
+            LOG_INF("DEBUG: INPUT_BTN_1 = %d, INPUT_BTN_0 = %d, INPUT_BTN_2 = %d",
+                    INPUT_BTN_1, INPUT_BTN_0, INPUT_BTN_2);
+            send_input_event(INPUT_EV_KEY, 1, 1, false);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
         }
 
