@@ -5,13 +5,8 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <dt-bindings/zmk/keys.h>
-#include <zmk/hid.h>
-#include <zmk/endpoints.h>
 #include <math.h>
 #include "iqs5xx.h"
-#include "gesture_handlers.h"
-#include "trackpad_keyboard_events.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
