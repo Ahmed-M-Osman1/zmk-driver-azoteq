@@ -13,16 +13,18 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
+                // SIMPLE: Immediate single click - handle regardless of drag state
+                // (Hardware gestures are reported when finger is lifted, so drag state doesn't matter)
                 LOG_INF("*** SINGLE TAP -> IMMEDIATE LEFT CLICK ***");
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 1, false);
+                send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 0, true);
                 break;
 
             case GESTURE_TAP_AND_HOLD:
                 // IMMEDIATE drag start
                 if (!state->isDragging) {
                     LOG_INF("*** TAP AND HOLD -> DRAG START ***");
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 1, true);
                     state->isDragging = true;
                     state->dragStartSent = true;
                 }
@@ -65,7 +67,7 @@ void reset_single_finger_state(struct gesture_state *state) {
     // IMMEDIATE drag release when finger is lifted
     if (state->isDragging && state->dragStartSent) {
         LOG_INF("*** DRAG END - IMMEDIATE RELEASE ***");
-        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+        send_input_event(INPUT_EV_KEY, INPUT_BTN_LEFT, 0, true);
         state->isDragging = false;
         state->dragStartSent = false;
     }
