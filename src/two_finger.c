@@ -58,7 +58,7 @@ struct enhanced_two_finger_state {
 #define SCROLL_SENSITIVITY          3.0f    // Scroll speed multiplier
 #define ZOOM_STABILITY_THRESHOLD    15.0f   // Distance change considered stable
 #define MIN_FINGER_STRENGTH         1000    // Minimum strength for valid gesture
-#define TAP_MOVEMENT_THRESHOLD      20.0f   // FIXED: Maximum movement allowed for tap detection
+#define TAP_MOVEMENT_THRESHOLD      35.0f   // RELAXED: Increased from 20px to 35px for more lenient
 
 // Calculate distance between two points
 static float calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {

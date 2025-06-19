@@ -66,6 +66,24 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         last_logged_fingers = data->finger_count;
     }
 
+    // FIXED: Handle gestures for finger_count=0 BEFORE switching on finger count
+    // This is crucial because hardware gestures (like single tap) are reported when fingers=0
+    if (has_gesture) {
+        LOG_INF("Processing gesture: fingers=%d, g0=0x%02x, g1=0x%02x",
+                data->finger_count, data->gestures0, data->gestures1);
+
+        // Handle gestures based on the gesture type, not just finger count
+        if (data->gestures0 != 0) {
+            // Single finger gestures (like tap) are reported when fingers=0
+            handle_single_finger_gestures(dev, data, &g_gesture_state);
+        }
+        if (data->gestures1 != 0) {
+            // Multi-finger gestures might be reported at various finger counts
+            // For now, let the specific handlers deal with them
+            LOG_INF("Multi-finger gesture detected: 0x%02x", data->gestures1);
+        }
+    }
+
     // FAST gesture processing - direct switch without complex logic
     switch (data->finger_count) {
         case 0:
@@ -73,12 +91,14 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             reset_single_finger_state(&g_gesture_state);
             reset_two_finger_state(&g_gesture_state);
             reset_three_finger_state(&g_gesture_state);
+            // Note: Don't call handle_single_finger_gestures here as it's handled above
             break;
 
         case 1:
             // Only reset others if they were active
             if (g_gesture_state.twoFingerActive) reset_two_finger_state(&g_gesture_state);
             if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
+            // Handle movement and drag gestures
             handle_single_finger_gestures(dev, data, &g_gesture_state);
             break;
 
