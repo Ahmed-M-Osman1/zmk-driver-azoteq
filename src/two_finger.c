@@ -46,6 +46,9 @@ struct enhanced_two_finger_state {
     // Movement tracking for gesture detection
     float total_movement_x[2];  // Total X movement for each finger
     float total_movement_y[2];  // Total Y movement for each finger
+
+    // FIXED: Add tap detection tracking
+    bool significant_movement_detected;
 } static two_finger_state = {0};
 
 // Configuration constants
@@ -55,6 +58,7 @@ struct enhanced_two_finger_state {
 #define SCROLL_SENSITIVITY          3.0f    // Scroll speed multiplier
 #define ZOOM_STABILITY_THRESHOLD    15.0f   // Distance change considered stable
 #define MIN_FINGER_STRENGTH         1000    // Minimum strength for valid gesture
+#define TAP_MOVEMENT_THRESHOLD      20.0f   // FIXED: Maximum movement allowed for tap detection
 
 // Calculate distance between two points
 static float calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
@@ -67,6 +71,19 @@ static float calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t 
 static void calculate_center_point(const struct iqs5xx_rawdata *data, float *center_x, float *center_y) {
     *center_x = (float)(data->fingers[0].ax + data->fingers[1].ax) / 2.0f;
     *center_y = (float)(data->fingers[0].ay + data->fingers[1].ay) / 2.0f;
+}
+
+// FIXED: Check if movement is significant enough to prevent tap
+static bool check_movement_for_tap(const struct iqs5xx_rawdata *data) {
+    float dx0 = (float)(data->fingers[0].ax - two_finger_state.start_pos[0].x);
+    float dy0 = (float)(data->fingers[0].ay - two_finger_state.start_pos[0].y);
+    float dx1 = (float)(data->fingers[1].ax - two_finger_state.start_pos[1].x);
+    float dy1 = (float)(data->fingers[1].ay - two_finger_state.start_pos[1].y);
+
+    float movement0 = sqrtf(dx0*dx0 + dy0*dy0);
+    float movement1 = sqrtf(dx1*dx1 + dy1*dy1);
+
+    return (movement0 > TAP_MOVEMENT_THRESHOLD || movement1 > TAP_MOVEMENT_THRESHOLD);
 }
 
 // Detect gesture type based on finger movement patterns
@@ -86,6 +103,11 @@ static two_finger_gesture_type_t detect_gesture_type(const struct iqs5xx_rawdata
     // Calculate movement magnitudes
     float movement0 = sqrtf(dx0*dx0 + dy0*dy0);
     float movement1 = sqrtf(dx1*dx1 + dy1*dy1);
+
+    // FIXED: Track if significant movement occurred
+    if (movement0 > TAP_MOVEMENT_THRESHOLD || movement1 > TAP_MOVEMENT_THRESHOLD) {
+        two_finger_state.significant_movement_detected = true;
+    }
 
     // Check if both fingers moved enough
     if (movement0 < SCROLL_THRESHOLD_PX && movement1 < SCROLL_THRESHOLD_PX) {
@@ -249,6 +271,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         two_finger_state.zoom_command_sent = false;
         two_finger_state.stable_readings = 0;
         two_finger_state.last_scroll_time = current_time;
+        two_finger_state.significant_movement_detected = false; // FIXED: Initialize movement tracking
 
         // Store initial positions
         two_finger_state.start_pos[0].x = two_finger_state.last_pos[0].x = data->fingers[0].ax;
@@ -286,6 +309,11 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
     int64_t time_since_start = current_time - two_finger_state.start_time;
 
+    // FIXED: Track movement for tap detection during the entire session
+    if (!two_finger_state.significant_movement_detected) {
+        two_finger_state.significant_movement_detected = check_movement_for_tap(data);
+    }
+
     // Wait for stabilization before detecting gesture type
     if (time_since_start < GESTURE_DETECTION_TIME_MS) {
         LOG_DBG("Waiting for stabilization (%lld/%d ms)", time_since_start, GESTURE_DETECTION_TIME_MS);
@@ -317,26 +345,31 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             // No gesture detected yet, continue waiting
             break;
     }
-
-    // REMOVED: debug_two_finger_positions(data, state); // This was causing major lag!
 }
 
 void reset_two_finger_state(struct gesture_state *state) {
     if (two_finger_state.active) {
         LOG_INF("=== TWO FINGER SESSION END ===");
 
-        // Handle two-finger tap if no other gesture was performed
+        // FIXED: Handle two-finger tap ONLY if no significant movement was detected
         if (!two_finger_state.gesture_locked &&
+            !two_finger_state.significant_movement_detected &&
             k_uptime_get() - two_finger_state.start_time < 300) {
             LOG_INF("*** TWO FINGER TAP -> RIGHT CLICK ***");
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, false);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
+        } else {
+            LOG_DBG("No two-finger tap: locked=%d, movement=%d, time=%lld",
+                    two_finger_state.gesture_locked,
+                    two_finger_state.significant_movement_detected,
+                    k_uptime_get() - two_finger_state.start_time);
         }
 
         const char* gesture_names[] = {"NONE", "ZOOM", "VERTICAL_SCROLL", "HORIZONTAL_SCROLL"};
-        LOG_INF("Session completed: gesture=%s, zoom_sent=%d",
+        LOG_INF("Session completed: gesture=%s, zoom_sent=%d, movement_detected=%d",
                 gesture_names[two_finger_state.gesture_type],
-                two_finger_state.zoom_command_sent);
+                two_finger_state.zoom_command_sent,
+                two_finger_state.significant_movement_detected);
 
         // Clear enhanced state
         memset(&two_finger_state, 0, sizeof(two_finger_state));

@@ -30,36 +30,36 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
-                // Handle single tap regardless of finger count (tap completes after finger lift)
-                if (!state->isDragging) {
-                    int64_t current_time = k_uptime_get();
+                // FIXED: Handle single tap REGARDLESS of drag state - tap is detected AFTER finger lift
+                LOG_INF("Processing single tap (drag state: %s)", state->isDragging ? "active" : "inactive");
 
-                    // Check for double-tap (within 400ms)
-                    if (waiting_for_double_tap && (current_time - last_tap_time) < 400) {
-                        // Double-tap detected!
-                        LOG_INF("*** DOUBLE TAP -> DOUBLE CLICK ***");
-                        k_work_cancel_delayable(&double_tap_work);
-                        waiting_for_double_tap = false;
+                int64_t current_time = k_uptime_get();
 
-                        // Send double-click
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, false);
-                        k_msleep(50); // Small delay between clicks
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                // Check for double-tap (within 400ms)
+                if (waiting_for_double_tap && (current_time - last_tap_time) < 400) {
+                    // Double-tap detected!
+                    LOG_INF("*** DOUBLE TAP -> DOUBLE CLICK ***");
+                    k_work_cancel_delayable(&double_tap_work);
+                    waiting_for_double_tap = false;
 
-                        last_tap_time = 0; // Reset to prevent triple-tap
-                    } else {
-                        // First tap - wait for potential double-tap
-                        LOG_INF("*** FIRST TAP - WAITING FOR DOUBLE ***");
-                        last_tap_time = current_time;
-                        waiting_for_double_tap = true;
+                    // Send double-click
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, false);
+                    k_msleep(50); // Small delay between clicks
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, false);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
 
-                        // Schedule single-click if no double-tap comes
-                        k_work_schedule(&double_tap_work, K_MSEC(400));
-                    }
-                    hasGesture = true;
+                    last_tap_time = 0; // Reset to prevent triple-tap
+                } else {
+                    // First tap - wait for potential double-tap
+                    LOG_INF("*** FIRST TAP - WAITING FOR DOUBLE ***");
+                    last_tap_time = current_time;
+                    waiting_for_double_tap = true;
+
+                    // Schedule single-click if no double-tap comes
+                    k_work_schedule(&double_tap_work, K_MSEC(400));
                 }
+                hasGesture = true;
                 break;
 
             case GESTURE_TAP_AND_HOLD:
