@@ -49,12 +49,13 @@ struct enhanced_two_finger_state {
 } static two_finger_state = {0};
 
 // Configuration constants
-#define GESTURE_DETECTION_TIME_MS    150    // Time to wait before deciding gesture type
+#define GESTURE_DETECTION_TIME_MS    100    // Reduced! Time to wait before deciding gesture type
 #define ZOOM_THRESHOLD_PX           100     // Distance change needed for zoom
-#define SCROLL_THRESHOLD_PX         30      // Movement needed to start scrolling
+#define SCROLL_THRESHOLD_PX         25      // Reduced! Movement needed to start scrolling
 #define SCROLL_SENSITIVITY          3.0f    // Scroll speed multiplier
 #define ZOOM_STABILITY_THRESHOLD    15.0f   // Distance change considered stable
 #define MIN_FINGER_STRENGTH         1000    // Minimum strength for valid gesture
+#define TAP_MAX_TIME_MS             200     // Reduced! Maximum time for a tap
 
 // Calculate distance between two points
 static float calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2) {
@@ -67,6 +68,13 @@ static float calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t 
 static void calculate_center_point(const struct iqs5xx_rawdata *data, float *center_x, float *center_y) {
     *center_x = (float)(data->fingers[0].ax + data->fingers[1].ax) / 2.0f;
     *center_y = (float)(data->fingers[0].ay + data->fingers[1].ay) / 2.0f;
+}
+
+// IMMEDIATE two-finger tap detection from hardware gesture
+static void handle_hardware_two_finger_tap(void) {
+    LOG_INF("*** HARDWARE TWO FINGER TAP -> IMMEDIATE RIGHT CLICK ***");
+    send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 1, false);
+    send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 0, true);
 }
 
 // Detect gesture type based on finger movement patterns
@@ -223,6 +231,27 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         return;
     }
 
+    // IMMEDIATE HARDWARE GESTURE HANDLING - Check first for instant response
+    if (data->gestures1 & GESTURE_TWO_FINGER_TAP) {
+        handle_hardware_two_finger_tap();
+        return; // Handle tap immediately, don't process other gestures
+    }
+
+    // ALSO check for immediate tap if fingers are very stable
+    if (!two_finger_state.active) {
+        // If this is the very first reading and fingers are close together,
+        // it's likely a tap intention - be more aggressive
+        float initial_distance = calculate_distance(
+            data->fingers[0].ax, data->fingers[0].ay,
+            data->fingers[1].ax, data->fingers[1].ay
+        );
+
+        // If fingers are very close (likely a tap), reduce detection time
+        if (initial_distance < 150.0f) {
+            LOG_DBG("Fingers close together (%.1f px) - likely tap intention", (double)initial_distance);
+        }
+    }
+
     // Ensure we have two valid finger readings
     if (data->fingers[0].strength == 0 || data->fingers[1].strength == 0) {
         LOG_DBG("Skipping: invalid finger data (strength: %d, %d)",
@@ -317,20 +346,18 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             // No gesture detected yet, continue waiting
             break;
     }
-
-    // REMOVED: debug_two_finger_positions(data, state); // This was causing major lag!
 }
 
 void reset_two_finger_state(struct gesture_state *state) {
     if (two_finger_state.active) {
         LOG_INF("=== TWO FINGER SESSION END ===");
 
-        // Handle two-finger tap if no other gesture was performed
+        // SIMPLIFIED: Only handle fallback tap if no other gesture was performed AND it was quick
         if (!two_finger_state.gesture_locked &&
-            k_uptime_get() - two_finger_state.start_time < 300) {
-            LOG_INF("*** TWO FINGER TAP -> RIGHT CLICK ***");
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, false);
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
+            k_uptime_get() - two_finger_state.start_time < TAP_MAX_TIME_MS) {
+            LOG_INF("*** FALLBACK TWO FINGER TAP -> RIGHT CLICK ***");
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 1, false);
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 0, true);
         }
 
         const char* gesture_names[] = {"NONE", "ZOOM", "VERTICAL_SCROLL", "HORIZONTAL_SCROLL"};
