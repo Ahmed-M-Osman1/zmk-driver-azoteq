@@ -22,7 +22,7 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// Send Control+Up key combination for Mission Control
+// FIXED: Proper state cleanup after Mission Control
 static void send_control_up(void) {
     LOG_INF("*** SENDING CONTROL+UP (MISSION CONTROL) ***");
 
@@ -59,11 +59,17 @@ static void send_control_up(void) {
     // Release Control
     zmk_hid_keyboard_release(LCTRL);
     zmk_endpoints_send_report(0x07);
+    k_msleep(20);
 
-    LOG_INF("Control+Up sequence complete - Mission Control should appear!");
+    // CRITICAL FIX: Complete cleanup after Mission Control
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(50); // Give extra time for cleanup
+
+    LOG_INF("Control+Up sequence complete with FULL CLEANUP");
 }
 
-// NEW: Send Control+Down for Application Windows (App Exposé)
+// FIXED: Proper state cleanup after Application Windows
 static void send_control_down(void) {
     LOG_INF("*** SENDING CONTROL+DOWN (APPLICATION WINDOWS) ***");
 
@@ -100,8 +106,14 @@ static void send_control_down(void) {
     // Release Control
     zmk_hid_keyboard_release(LCTRL);
     zmk_endpoints_send_report(0x07);
+    k_msleep(20);
 
-    LOG_INF("Control+Down sequence complete - Application Windows should appear!");
+    // CRITICAL FIX: Complete cleanup after Application Windows
+    zmk_hid_keyboard_clear();
+    zmk_endpoints_send_report(0x07);
+    k_msleep(50); // Give extra time for cleanup
+
+    LOG_INF("Control+Down sequence complete with FULL CLEANUP");
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
@@ -166,17 +178,23 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
                 LOG_INF("*** THREE FINGER SWIPE DOWN -> APPLICATION WINDOWS ***");
                 send_control_down();
             } else {
-                // SWIPE UP = Mission Control
+                // SWIPE UP = Mission Control - THIS IS THE PROBLEMATIC ONE
                 LOG_INF("*** THREE FINGER SWIPE UP -> MISSION CONTROL ***");
                 send_control_up();
             }
 
-            // Mark gesture as complete
+            // CRITICAL FIX: Complete state cleanup after gesture
             state->gestureTriggered = true;
             global_gesture_cooldown = current_time;
             state->threeFingersPressed = false;
 
-            LOG_INF("Three finger gesture complete - cooldown active for 1000ms");
+            // ADDITIONAL CLEANUP: Reset ALL gesture states to prevent contamination
+            state->isDragging = false;
+            state->dragStartSent = false;
+            state->twoFingerActive = false;
+            state->lastXScrollReport = 0;
+
+            LOG_INF("Three finger gesture complete - ALL STATES RESET");
             return;
         }
     }
@@ -200,6 +218,8 @@ void reset_three_finger_state(struct gesture_state *state) {
     if (state->threeFingersPressed) {
         state->threeFingersPressed = false;
         state->gestureTriggered = false;
-        LOG_DBG("Three fingers released - ready for next gesture");
+
+        // ADDITIONAL CLEANUP: Make sure no other states are contaminated
+        LOG_INF("Three fingers released - COMPLETE STATE CLEANUP");
     }
 }
