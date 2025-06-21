@@ -72,9 +72,9 @@ static void calculate_center_point(const struct iqs5xx_rawdata *data, float *cen
 
 // IMMEDIATE two-finger tap detection from hardware gesture
 static void handle_hardware_two_finger_tap(void) {
-    LOG_INF("*** HARDWARE TWO FINGER TAP -> IMMEDIATE RIGHT CLICK ***");
-    send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 1, false);
-    send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 0, true);
+    LOG_INF("*** TWO FINGER TAP -> RIGHT CLICK ***");
+    send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
+    send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
 }
 
 // Detect gesture type based on finger movement patterns
@@ -356,8 +356,8 @@ void reset_two_finger_state(struct gesture_state *state) {
         if (!two_finger_state.gesture_locked &&
             k_uptime_get() - two_finger_state.start_time < TAP_MAX_TIME_MS) {
             LOG_INF("*** FALLBACK TWO FINGER TAP -> RIGHT CLICK ***");
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 1, false);
-            send_input_event(INPUT_EV_KEY, INPUT_BTN_RIGHT, 0, true);
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
+            send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
         }
 
         const char* gesture_names[] = {"NONE", "ZOOM", "VERTICAL_SCROLL", "HORIZONTAL_SCROLL"};
