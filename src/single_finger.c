@@ -4,14 +4,18 @@
 #include <math.h>
 #include "gesture_handlers.h"
 
+LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
+
 void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
     // IMMEDIATE GESTURE HANDLING - following the working code pattern
     if (data->gestures0) {
+        LOG_INF("Hardware gesture detected: 0x%02x", data->gestures0);
 
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
                 // IMMEDIATE SINGLE CLICK - only if not already dragging (like working code)
                 if (!state->isDragging) {
+                    LOG_INF("*** SINGLE TAP -> LEFT CLICK ***");
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
                 }
@@ -20,15 +24,18 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
             case GESTURE_TAP_AND_HOLD:
                 // IMMEDIATE drag start - only send button press ONCE (like working code)
                 if (!state->isDragging) {
+                    LOG_INF("*** TAP AND HOLD -> DRAG START ***");
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
                     state->isDragging = true;
                     state->dragStartSent = true;
                 } else {
                     // Already dragging, don't send more button presses
+                    LOG_DBG("Already dragging, ignoring repeated tap-and-hold gesture");
                 }
                 break;
 
             default:
+                LOG_DBG("Unknown single finger gesture: 0x%02x", data->gestures0);
                 break;
         }
     }
@@ -48,6 +55,8 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 
             // Use same threshold as working code
             if (fabsf(state->accumPos.x) >= MOVEMENT_THRESHOLD || fabsf(state->accumPos.y) >= MOVEMENT_THRESHOLD) {
+                LOG_DBG("Mouse movement: rx=%d,ry=%d -> accum=%.2f,%.2f -> move=%d,%d",
+                        data->rx, data->ry, (double)state->accumPos.x, (double)state->accumPos.y, xp, yp);
 
                 // Send movement events (works for both normal movement and drag)
                 send_input_event(INPUT_EV_REL, INPUT_REL_X, xp, false);
@@ -64,6 +73,7 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 void reset_single_finger_state(struct gesture_state *state) {
     // IMMEDIATE drag release when fingers are lifted (like working code)
     if (state->isDragging && state->dragStartSent) {
+        LOG_INF("*** DRAG END - RELEASING BUTTON ***");
         send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
         state->isDragging = false;
         state->dragStartSent = false;
@@ -71,6 +81,8 @@ void reset_single_finger_state(struct gesture_state *state) {
 
     // Reset accumulated position (like working code)
     if (state->accumPos.x != 0 || state->accumPos.y != 0) {
+        LOG_DBG("Resetting accumulated position: was %.2f,%.2f",
+                (double)state->accumPos.x, (double)state->accumPos.y);
         state->accumPos.x = 0;
         state->accumPos.y = 0;
     }

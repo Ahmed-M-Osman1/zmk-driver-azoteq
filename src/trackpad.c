@@ -13,6 +13,8 @@
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
 
+LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
+
 static struct gesture_state g_gesture_state = {0};
 static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
@@ -24,18 +26,18 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     event_count++;
     // Log important events
     if (type == INPUT_EV_KEY) {
-        // Button press/release
+        LOG_INF("CLICK #%d: btn=%d, val=%d", event_count, code, value);
     } else if (abs(value) > 5) { // Only log significant movements
-        // Mouse movement
+        LOG_DBG("MOVE #%d: type=%d, code=%d, val=%d", event_count, type, code, value);
     }
 
     if (trackpad_device) {
         int ret = input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
         if (ret < 0) {
-            return;
+            LOG_ERR("Input event failed: %d", ret);
         }
     } else {
-        return;
+        LOG_ERR("No trackpad device");
     }
 }
 
@@ -58,12 +60,13 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
 
     // Log when finger count changes or gestures detected
     if (finger_count_changed || has_gesture) {
-        // TRIGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
+        LOG_INF("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
+                trigger_count, data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
     }
 
     // FIXED: Process gestures FIRST, before finger count logic
     if (has_gesture) {
-        // GESTURE DETECTED: g0=0x%02x, g1=0x%02x ===", data->gestures0, data->gestures1);
+        LOG_INF("=== GESTURE DETECTED: g0=0x%02x, g1=0x%02x ===", data->gestures0, data->gestures1);
 
         // Handle single finger gestures (including taps that happen on finger lift)
         if (data->gestures0) {
@@ -129,32 +132,35 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
 }
 
 static int trackpad_init(void) {
-    // Get the IQS5XX device
-    const struct device *trackpad = DEVICE_DT_GET(DT_DRV_INST(0));
-    if (!trackpad) {
-        return -ENODEV;
+    LOG_INF("=== OPTIMIZED MODULAR TRACKPAD INIT START ===");
+
+    trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
+    if (trackpad == NULL) {
+        LOG_ERR("Failed to get IQS5XX device");
+        return -EINVAL;
     }
+    LOG_INF("Found IQS5XX device: %p", trackpad);
 
-    // Set the global trackpad device reference
     trackpad_device = trackpad;
+    LOG_INF("Set trackpad device reference: %p", trackpad_device);
 
-    // Initialize trackpad keyboard events
-    int ret = trackpad_keyboard_events_init();
+    // Initialize the keyboard events system
+    int ret = trackpad_keyboard_init(trackpad_device);
     if (ret < 0) {
+        LOG_ERR("Failed to initialize trackpad keyboard events: %d", ret);
         return ret;
     }
 
-    // Initialize gesture state
-    single_finger_init();
-    two_finger_init();
-    three_finger_init();
+    // Initialize gesture state with performance settings
+    memset(&g_gesture_state, 0, sizeof(g_gesture_state));
+    g_gesture_state.mouseSensitivity = 200; // Match your overlay sensitivity
+    LOG_INF("Initialized optimized gesture state");
 
-    // Set the trigger handler
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
-    if (err < 0) {
-        return err;
+    if(err) {
+        LOG_ERR("Failed to set trigger handler: %d", err);
+        return -EINVAL;
     }
-
     return 0;
 }
 
