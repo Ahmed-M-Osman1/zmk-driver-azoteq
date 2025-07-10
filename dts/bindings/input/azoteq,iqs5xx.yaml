@@ -25,7 +25,7 @@ properties:
   rotate-180:
     type: boolean
     description: Rotate trackpad coordinates 180 degrees (x,y) → (-x,-y).
-4
+
   rotate-270:
     type: boolean
     description: Rotate trackpad coordinates 270 degrees clockwise (x,y) → (-y,x).
