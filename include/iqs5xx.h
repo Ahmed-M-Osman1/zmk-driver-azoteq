@@ -73,9 +73,25 @@ struct iqs5xx_data {
 struct iqs5xx_config {
     // Data ready GPIO spec from devicetree
     const struct gpio_dt_spec dr;
-    // Note: invert_x, invert_y removed for simplicity
-    // Can be added back later when needed
+    // NEW: Coordinate transformation flags
+    bool invert_x;
+    bool invert_y;
+    bool rotate_90;
+    bool rotate_180;
+    bool rotate_270;
+
+    // Add sensitivity from devicetree
+    uint8_t sensitivity;
 };
+
+struct coord_transform {
+    int16_t x;
+    int16_t y;
+};
+
+struct coord_transform apply_coordinate_transform(int16_t x, int16_t y, const struct iqs5xx_config *config);
+void apply_finger_transform(struct iqs5xx_finger *finger, const struct iqs5xx_config *config);
+
 
 // Register configuration structure
 struct __attribute__((packed)) iqs5xx_reg_config {

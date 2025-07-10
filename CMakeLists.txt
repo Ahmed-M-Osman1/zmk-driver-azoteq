@@ -19,6 +19,7 @@ if(CONFIG_IQS5XX)
       src/two_finger.c
       src/three_finger.c
       src/trackpad_keyboard_events.c
+      src/coordinate_transform.c
     )
 
     # Link against ZMK if available

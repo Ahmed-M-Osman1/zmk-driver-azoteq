@@ -129,32 +129,30 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
 }
 
 static int trackpad_init(void) {
-    // Get the IQS5XX device
-    const struct device *trackpad = DEVICE_DT_GET(DT_DRV_INST(0));
-    if (!trackpad) {
-        return -ENODEV;
+    trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
+    if (trackpad == NULL) {
+        LOG_ERR("Failed to get IQS5XX device");
+        return -EINVAL;
     }
-
-    // Set the global trackpad device reference
     trackpad_device = trackpad;
 
-    // Initialize trackpad keyboard events
-    int ret = trackpad_keyboard_events_init();
+    // Get configuration for sensitivity
+    const struct iqs5xx_config *config = trackpad->config;
+
+    // Initialize the keyboard events system
+    int ret = trackpad_keyboard_init(trackpad_device);
     if (ret < 0) {
         return ret;
     }
 
-    // Initialize gesture state
-    single_finger_init();
-    two_finger_init();
-    three_finger_init();
+    // Initialize gesture state with devicetree sensitivity
+    memset(&g_gesture_state, 0, sizeof(g_gesture_state));
+    g_gesture_state.mouseSensitivity = config->sensitivity;
 
-    // Set the trigger handler
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
-    if (err < 0) {
-        return err;
+    if(err) {
+        return -EINVAL;
     }
-
     return 0;
 }
 

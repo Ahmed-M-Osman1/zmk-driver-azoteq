@@ -84,44 +84,45 @@ static int iqs5xx_reg_dump (const struct device *dev) {
  * @brief Read data from IQS5XX
 */
 static int iqs5xx_sample_fetch (const struct device *dev) {
-    uint8_t buffer[44];
-    struct iqs5xx_data *data = dev->data;
+     uint8_t buffer[44];
+        struct iqs5xx_data *data = dev->data;
+        const struct iqs5xx_config *config = dev->config;
 
-    int res = iqs5xx_seq_read(dev, GestureEvents0_adr, buffer, 44);
-    iqs5xx_write(dev, END_WINDOW, 0, 1);
+        int res = iqs5xx_seq_read(dev, GestureEvents0_adr, buffer, 44);
+        iqs5xx_write(dev, END_WINDOW, 0, 1);
 
-    if (res < 0) {
-        return res;
-    }
-
-    // Parse data
-    data->raw_data.gestures0 =      buffer[0];
-    data->raw_data.gestures1 =      buffer[1];
-    data->raw_data.system_info0 =   buffer[2];
-    data->raw_data.system_info1 =   buffer[3];
-    data->raw_data.finger_count =   buffer[4];
-    data->raw_data.rx =             buffer[5] << 8 | buffer[6];
-    data->raw_data.ry =             buffer[7] << 8 | buffer[8];
-
-    // Log interesting data
-    if (data->raw_data.finger_count > 0 || data->raw_data.gestures0 || data->raw_data.gestures1) {
-        return 0;
-    }
-
-    // Parse finger data
-    for(int i = 0; i < 5; i++) {
-        const int p = 9 + (7 * i);
-        data->raw_data.fingers[i].ax = buffer[p + 0] << 8 | buffer[p + 1];
-        data->raw_data.fingers[i].ay = buffer[p + 2] << 8 | buffer[p + 3];
-        data->raw_data.fingers[i].strength = buffer[p + 4] << 8 | buffer[p + 5];
-        data->raw_data.fingers[i].area= buffer[p + 6];
-
-        if (i < data->raw_data.finger_count && data->raw_data.fingers[i].strength > 0) {
-            return 0;
+        if (res < 0) {
+            return res;
         }
-    }
 
-    return 0;
+        // Parse data
+        data->raw_data.gestures0 =      buffer[0];
+        data->raw_data.gestures1 =      buffer[1];
+        data->raw_data.system_info0 =   buffer[2];
+        data->raw_data.system_info1 =   buffer[3];
+        data->raw_data.finger_count =   buffer[4];
+
+        // Parse relative movement (signed 16-bit values)
+        int16_t raw_rx = (int16_t)(buffer[5] << 8 | buffer[6]);
+        int16_t raw_ry = (int16_t)(buffer[7] << 8 | buffer[8]);
+
+        // Apply coordinate transformation to relative movement
+        struct coord_transform rel_transformed = apply_coordinate_transform(raw_rx, raw_ry, config);
+        data->raw_data.rx = rel_transformed.x;
+        data->raw_data.ry = rel_transformed.y;
+
+        for(int i = 0; i < 5; i++) {
+            const int p = 9 + (7 * i);
+            data->raw_data.fingers[i].ax = buffer[p + 0] << 8 | buffer[p + 1];
+            data->raw_data.fingers[i].ay = buffer[p + 2] << 8 | buffer[p + 3];
+            data->raw_data.fingers[i].strength = buffer[p + 4] << 8 | buffer[p + 5];
+            data->raw_data.fingers[i].area= buffer[p + 6];
+
+            // Apply finger coordinate transformation
+            apply_finger_transform(&data->raw_data.fingers[i], config);
+        }
+
+        return 0;
 }
 
 static void iqs5xx_work_cb(struct k_work *work) {
@@ -469,6 +470,12 @@ static struct iqs5xx_data iqs5xx_data_0 = {
 // Device configuration from devicetree - SAFE VERSION WITH FALLBACK
 static const struct iqs5xx_config iqs5xx_config_0 = {
     .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
+    .invert_x = DT_INST_PROP(0, invert_x),
+    .invert_y = DT_INST_PROP(0, invert_y),
+    .rotate_90 = DT_INST_PROP(0, rotate_90),
+    .rotate_180 = DT_INST_PROP(0, rotate_180),
+    .rotate_270 = DT_INST_PROP(0, rotate_270),
+    .sensitivity = DT_INST_PROP_OR(0, sensitivity, 128),
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,
