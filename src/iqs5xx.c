@@ -114,6 +114,41 @@ LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 static int iqs_regdump_err = 0;
 
+// Coordinate transformation function
+void iqs5xx_transform_coordinates(const struct device *dev, int16_t *x, int16_t *y) {
+    const struct iqs5xx_config *config = dev->config;
+    int16_t orig_x = *x;
+    int16_t orig_y = *y;
+
+    // Apply rotation first
+    if (config->rotate_90) {
+        // 90 degrees clockwise: X becomes Y, Y becomes -X
+        int16_t temp = *x;
+        *x = *y;
+        *y = -temp;
+    } else if (config->rotate_270) {
+        // 270 degrees clockwise: X becomes -Y, Y becomes X
+        int16_t temp = *x;
+        *x = -*y;
+        *y = temp;
+    }
+
+    // Apply axis inversion after rotation
+    if (config->invert_x) {
+        *x = -*x;
+    }
+    if (config->invert_y) {
+        *y = -*y;
+    }
+
+    // Log transformation if coordinates changed significantly
+    if (abs(orig_x - *x) > 5 || abs(orig_y - *y) > 5) {
+        LOG_DBG("Coordinate transform: (%d,%d) -> (%d,%d) [rot90=%d, rot270=%d, inv_x=%d, inv_y=%d]",
+                orig_x, orig_y, *x, *y,
+                config->rotate_90, config->rotate_270, config->invert_x, config->invert_y);
+    }
+}
+
 // Default config
 struct iqs5xx_reg_config iqs5xx_reg_config_default () {
     LOG_INF("Creating default IQS5XX register configuration");
@@ -222,6 +257,9 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
     data->raw_data.rx =             buffer[5] << 8 | buffer[6];
     data->raw_data.ry =             buffer[7] << 8 | buffer[8];
 
+    // Apply coordinate transformation to relative coordinates
+    iqs5xx_transform_coordinates(dev, &data->raw_data.rx, &data->raw_data.ry);
+
     // Log interesting data
     if (data->raw_data.finger_count > 0 || data->raw_data.gestures0 || data->raw_data.gestures1) {
         LOG_INF("Sample: fingers=%d, gestures=0x%02x/0x%02x, rel=%d/%d",
@@ -229,13 +267,22 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
                 data->raw_data.rx, data->raw_data.ry);
     }
 
-    // Parse finger data
+    // Parse finger data and apply transformations to absolute coordinates
     for(int i = 0; i < 5; i++) {
         const int p = 9 + (7 * i);
         data->raw_data.fingers[i].ax = buffer[p + 0] << 8 | buffer[p + 1];
         data->raw_data.fingers[i].ay = buffer[p + 2] << 8 | buffer[p + 3];
         data->raw_data.fingers[i].strength = buffer[p + 4] << 8 | buffer[p + 5];
         data->raw_data.fingers[i].area= buffer[p + 6];
+
+        // Apply coordinate transformation to absolute finger positions
+        if (data->raw_data.fingers[i].strength > 0) {
+            int16_t finger_x = (int16_t)data->raw_data.fingers[i].ax;
+            int16_t finger_y = (int16_t)data->raw_data.fingers[i].ay;
+            iqs5xx_transform_coordinates(dev, &finger_x, &finger_y);
+            data->raw_data.fingers[i].ax = (uint16_t)finger_x;
+            data->raw_data.fingers[i].ay = (uint16_t)finger_y;
+        }
 
         if (i < data->raw_data.finger_count && data->raw_data.fingers[i].strength > 0) {
             LOG_DBG("Finger %d: pos=%d/%d, strength=%d, area=%d", i,
@@ -561,6 +608,10 @@ static int iqs5xx_init(const struct device *dev) {
     LOG_INF("=== IQS5XX Driver Initialization Start ===");
     LOG_INF("Device: %p, Data: %p, Config: %p", dev, data, config);
 
+    // Log coordinate transformation settings
+    LOG_INF("Coordinate transform: invert_x=%d, invert_y=%d, rotate_90=%d, rotate_270=%d, sensitivity=%d",
+            config->invert_x, config->invert_y, config->rotate_90, config->rotate_270, config->sensitivity);
+
     data->dev = dev;
     data->i2c = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(0)));
 
@@ -676,9 +727,14 @@ static struct iqs5xx_data iqs5xx_data_0 = {
     .data_ready_handler = NULL
 };
 
-// Device configuration from devicetree - SAFE VERSION WITH FALLBACK
+// Device configuration from devicetree - ENHANCED VERSION WITH COORDINATE TRANSFORMATION
 static const struct iqs5xx_config iqs5xx_config_0 = {
     .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
+    .invert_x = DT_INST_PROP(0, invert_x),
+    .invert_y = DT_INST_PROP(0, invert_y),
+    .rotate_90 = DT_INST_PROP(0, rotate_90),
+    .rotate_270 = DT_INST_PROP(0, rotate_270),
+    .sensitivity = DT_INST_PROP_OR(0, sensitivity, 128),
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,

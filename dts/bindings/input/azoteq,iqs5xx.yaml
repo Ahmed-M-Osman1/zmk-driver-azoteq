@@ -18,6 +18,14 @@ properties:
     type: boolean
     description: Invert Y-axis movement
 
+  rotate-90:
+    type: boolean
+    description: Rotate coordinates 90 degrees clockwise (X becomes Y, Y becomes -X)
+
+  rotate-270:
+    type: boolean
+    description: Rotate coordinates 270 degrees clockwise (X becomes -Y, Y becomes X)
+
   no-taps:
     type: boolean
     description: Disable tap detection

@@ -73,8 +73,12 @@ struct iqs5xx_data {
 struct iqs5xx_config {
     // Data ready GPIO spec from devicetree
     const struct gpio_dt_spec dr;
-    // Note: invert_x, invert_y removed for simplicity
-    // Can be added back later when needed
+    bool invert_x;
+    bool invert_y;
+    bool rotate_90;
+    bool rotate_270;
+
+    int sensitivity;
 };
 
 // Register configuration structure
@@ -106,6 +110,9 @@ struct __attribute__((packed)) iqs5xx_reg_config {
     // Initial scroll distance (px)
     uint16_t    initScrollDistance;
 };
+
+// Coordinate transformation function
+void iqs5xx_transform_coordinates(const struct device *dev, int16_t *x, int16_t *y);
 
 // Returns the default register configuration
 struct iqs5xx_reg_config iqs5xx_reg_config_default ();

@@ -1,4 +1,3 @@
-// src/trackpad.c - FIXED version to handle gestures on finger lift
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
@@ -41,7 +40,7 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     }
 }
 
-// FIXED: Handle gestures even when finger_count == 0
+// FIXED: Handle gestures even when finger_count == 0, with coordinate transformation awareness
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
     int64_t current_time = k_uptime_get();
@@ -62,6 +61,15 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     if (finger_count_changed || has_gesture) {
         LOG_INF("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
                 trigger_count, data->finger_count, data->gestures0, data->gestures1, data->rx, data->ry);
+    }
+
+    // Log coordinate transformation info on significant events
+    if (has_gesture || finger_count_changed) {
+        const struct iqs5xx_config *config = dev->config;
+        if (config->invert_x || config->invert_y || config->rotate_90 || config->rotate_270) {
+            LOG_DBG("Transform active: inv_x=%d, inv_y=%d, rot90=%d, rot270=%d",
+                    config->invert_x, config->invert_y, config->rotate_90, config->rotate_270);
+        }
     }
 
     // FIXED: Process gestures FIRST, before finger count logic
@@ -141,6 +149,11 @@ static int trackpad_init(void) {
     }
     LOG_INF("Found IQS5XX device: %p", trackpad);
 
+    // Get configuration to read coordinate transform settings
+    const struct iqs5xx_config *config = trackpad->config;
+    LOG_INF("Trackpad config: sensitivity=%d, transform flags: invert_x=%d, invert_y=%d, rotate_90=%d, rotate_270=%d",
+            config->sensitivity, config->invert_x, config->invert_y, config->rotate_90, config->rotate_270);
+
     trackpad_device = trackpad;
     LOG_INF("Set trackpad device reference: %p", trackpad_device);
 
@@ -151,16 +164,25 @@ static int trackpad_init(void) {
         return ret;
     }
 
-    // Initialize gesture state with performance settings
+    // Initialize gesture state with sensitivity from device tree
     memset(&g_gesture_state, 0, sizeof(g_gesture_state));
-    g_gesture_state.mouseSensitivity = 200; // Match your overlay sensitivity
-    LOG_INF("Initialized optimized gesture state");
+    g_gesture_state.mouseSensitivity = config->sensitivity; // Use devicetree sensitivity
+    LOG_INF("Initialized optimized gesture state with sensitivity: %d", g_gesture_state.mouseSensitivity);
 
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
     if(err) {
         LOG_ERR("Failed to set trigger handler: %d", err);
         return -EINVAL;
     }
+
+    LOG_INF("=== TRACKPAD INITIALIZATION COMPLETE ===");
+    LOG_INF("Coordinate transformations: %s%s%s%s%s",
+            config->invert_x ? "invert-x " : "",
+            config->invert_y ? "invert-y " : "",
+            config->rotate_90 ? "rotate-90 " : "",
+            config->rotate_270 ? "rotate-270 " : "",
+            (!config->invert_x && !config->invert_y && !config->rotate_90 && !config->rotate_270) ? "none" : "");
+
     return 0;
 }
 
