@@ -14,9 +14,8 @@ int trackpad_keyboard_init(const struct device *input_dev) {
     return 0;
 }
 
-// FIXED: Use proper ZMK key codes instead of raw values
-static int send_zoom_combo(zmk_key modifier, zmk_key key, const char* description, int hold_time) {
-    // Clear any existing state - USE HID_USAGE_KEY
+static int send_zoom_combo(zmk_key_t modifier, zmk_key_t key, const char* description, int hold_time) {
+    // Clear any existing state
     zmk_hid_keyboard_clear();
     int ret = zmk_endpoints_send_report(HID_USAGE_KEY);
     if (ret < 0) {
@@ -84,10 +83,10 @@ static int send_zoom_combo(zmk_key modifier, zmk_key key, const char* descriptio
     return 0;
 }
 
-// ZOOM IN with multiple fallback methods - FIXED key codes
+// ZOOM IN with multiple fallback methods
 void send_trackpad_zoom_in(void) {
     // Method 1: Ctrl + Plus (using correct keycodes)
-    send_zoom_combo(LEFT_CONTROL, EQUAL, "Ctrl+Equal(Plus)", 150);
+    send_zoom_combo(LCTRL, EQUAL, "Ctrl+Equal(Plus)", 150);
     k_msleep(100);
 
     // Method 2: Ctrl + Shift + Plus (explicit plus)
@@ -95,10 +94,10 @@ void send_trackpad_zoom_in(void) {
     zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(50);
 
-    zmk_hid_keyboard_press(LEFT_CONTROL);
+    zmk_hid_keyboard_press(LCTRL);
     zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(20);
-    zmk_hid_keyboard_press(LEFT_SHIFT);
+    zmk_hid_keyboard_press(LSHFT);
     zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(20);
     zmk_hid_keyboard_press(EQUAL); // Shift+Equal = Plus
@@ -110,28 +109,28 @@ void send_trackpad_zoom_in(void) {
     k_msleep(100);
 
     // Method 3: Cmd+Plus for Mac compatibility
-    send_zoom_combo(LEFT_GUI, EQUAL, "Cmd+Plus(Mac)", 150);
+    send_zoom_combo(LGUI, EQUAL, "Cmd+Plus(Mac)", 150);
     k_msleep(100);
 
     // Method 4: Try numeric keypad plus
-    send_zoom_combo(LEFT_CONTROL, KP_PLUS, "Ctrl+NumPad_Plus", 150);
+    send_zoom_combo(LCTRL, KP_PLUS, "Ctrl+NumPad_Plus", 150);
 }
 
-// ZOOM OUT with multiple fallback methods - FIXED key codes
+// ZOOM OUT with multiple fallback methods
 void send_trackpad_zoom_out(void) {
     // Method 1: Ctrl + Minus
-    send_zoom_combo(LEFT_CONTROL, MINUS, "Ctrl+Minus", 150);
+    send_zoom_combo(LCTRL, MINUS, "Ctrl+Minus", 150);
     k_msleep(100);
 
     // Method 2: Cmd+Minus for Mac
-    send_zoom_combo(LEFT_GUI, MINUS, "Cmd+Minus(Mac)", 150);
+    send_zoom_combo(LGUI, MINUS, "Cmd+Minus(Mac)", 150);
     k_msleep(100);
 
     // Method 3: Numeric keypad minus
-    send_zoom_combo(LEFT_CONTROL, KP_MINUS, "Ctrl+NumPad_Minus", 150);
+    send_zoom_combo(LCTRL, KP_MINUS, "Ctrl+NumPad_Minus", 150);
 }
 
-// Test functions - FIXED key codes
+// Test functions
 void send_trackpad_f3(void) {
     send_zoom_combo(0, F3, "F3_Test", 100);
 }

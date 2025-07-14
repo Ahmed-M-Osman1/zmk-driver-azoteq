@@ -7,10 +7,16 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <dt-bindings/zmk/keys.h>
+#include <zmk/hid.h>
+#include <zmk/endpoints.h>
+#include <math.h>
 #include <stdlib.h>
 #include "iqs5xx.h"
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
+
+LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 // Global cooldown to prevent gesture re-triggering
 static int64_t global_gesture_cooldown = 0;
@@ -28,7 +34,7 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
 static void send_control_up(void) {
     // Clear any existing HID state first
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(10);
 
     // Press Control
@@ -36,32 +42,32 @@ static void send_control_up(void) {
     if (ret1 < 0) {
         return;
     }
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(10);
 
     // Press Up Arrow
-    int ret2 = zmk_hid_keyboard_press(UP_ARROW);
+    int ret2 = zmk_hid_keyboard_press(UP);
     if (ret2 < 0) {
         zmk_hid_keyboard_release(LCTRL);
-        zmk_endpoints_send_report(0x07);
+        zmk_endpoints_send_report(HID_USAGE_KEY);
         return;
     }
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(50); // Hold the combination
 
     // Release Up Arrow
-    zmk_hid_keyboard_release(UP_ARROW);
-    zmk_endpoints_send_report(0x07);
+    zmk_hid_keyboard_release(UP);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(10);
 
     // Release Control
     zmk_hid_keyboard_release(LCTRL);
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(20);
 
     // CRITICAL FIX: Complete cleanup after Mission Control
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(50); // Give extra time for cleanup
 }
 
@@ -69,7 +75,7 @@ static void send_control_up(void) {
 static void send_control_down(void) {
     // Clear any existing HID state first
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(10);
 
     // Press Control
@@ -77,32 +83,32 @@ static void send_control_down(void) {
     if (ret1 < 0) {
         return;
     }
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(10);
 
     // Press Down Arrow
-    int ret2 = zmk_hid_keyboard_press(DOWN_ARROW);
+    int ret2 = zmk_hid_keyboard_press(DOWN);
     if (ret2 < 0) {
         zmk_hid_keyboard_release(LCTRL);
-        zmk_endpoints_send_report(0x07);
+        zmk_endpoints_send_report(HID_USAGE_KEY);
         return;
     }
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(50); // Hold the combination
 
     // Release Down Arrow
-    zmk_hid_keyboard_release(DOWN_ARROW);
-    zmk_endpoints_send_report(0x07);
+    zmk_hid_keyboard_release(DOWN);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(10);
 
     // Release Control
     zmk_hid_keyboard_release(LCTRL);
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(20);
 
     // CRITICAL FIX: Complete cleanup after Application Windows
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(0x07);
+    zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(50); // Give extra time for cleanup
 }
 
