@@ -12,6 +12,8 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/pm/device.h>
+#include <stdlib.h>
 #include "iqs5xx.h"
 
 LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
@@ -469,6 +471,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     }
 }
 
+#ifdef CONFIG_PM_DEVICE
 /**
  * @brief Device power management - handle sleep/wake
  */
@@ -513,6 +516,7 @@ static int iqs5xx_pm_action(const struct device *dev, enum pm_device_action acti
 
     return ret;
 }
+#endif /* CONFIG_PM_DEVICE */
 
 static int iqs5xx_init(const struct device *dev) {
     struct iqs5xx_data *data = dev->data;
@@ -621,8 +625,13 @@ static const struct iqs5xx_config iqs5xx_config_0 = {
     .sensitivity = DT_INST_PROP_OR(0, sensitivity, 128),
 };
 
+#ifdef CONFIG_PM_DEVICE
 PM_DEVICE_DT_INST_DEFINE(0, iqs5xx_pm_action);
+#define PM_DEVICE_INST PM_DEVICE_DT_INST_GET(0)
+#else
+#define PM_DEVICE_INST NULL
+#endif
 
-DEVICE_DT_INST_DEFINE(0, iqs5xx_init, PM_DEVICE_DT_INST_GET(0),
+DEVICE_DT_INST_DEFINE(0, iqs5xx_init, PM_DEVICE_INST,
                       &iqs5xx_data_0, &iqs5xx_config_0,
                       POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, NULL);

@@ -7,6 +7,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <stdlib.h>
 #include "iqs5xx.h"
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"

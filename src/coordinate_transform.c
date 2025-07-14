@@ -1,6 +1,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include "iqs5xx.h"
+#include <stdlib.h>
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 

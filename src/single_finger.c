@@ -2,6 +2,7 @@
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <math.h>
+#include <stdlib.h>  // Added for abs()
 #include "gesture_handlers.h"
 
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
