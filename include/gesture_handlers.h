@@ -44,8 +44,8 @@ struct gesture_state {
 // Configuration constants
 #define TRACKPAD_THREE_FINGER_CLICK_TIME    200
 #define TRACKPAD_THREE_FINGER_SWIPE_MIN_DIST 30
-#define SCROLL_REPORT_DISTANCE              15
-#define MOVEMENT_THRESHOLD                  0.3f  // Reduced for faster response
+#define SCROLL_REPORT_DISTANCE              30
+#define MOVEMENT_THRESHOLD                  0.3f
 #define ZOOM_THRESHOLD                      80
 #define ZOOM_SENSITIVITY                    40
 
