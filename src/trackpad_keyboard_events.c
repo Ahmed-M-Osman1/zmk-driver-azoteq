@@ -1,30 +1,22 @@
-// src/trackpad_keyboard_events.c - FIXED VERSION with 0x07
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
-#include <zephyr/logging/log.h>
 #include <zmk/keymap.h>
 #include <zmk/behavior.h>
 #include <zmk/hid.h>
 #include <zmk/endpoints.h>
 #include <dt-bindings/zmk/keys.h>
 
-LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
-
 // Initialize the keyboard events system
 int trackpad_keyboard_init(const struct device *input_dev) {
-    LOG_INF("ZMK trackpad keyboard events initialized");
     return 0;
 }
 
 // FIXED: Use 0x07 for keyboard HID usage page
 static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* description, int hold_time) {
-    LOG_INF("*** SENDING %s (mod:0x%02x + key:0x%02x) ***", description, modifier, key);
-
     // Clear any existing state - USE 0x07
     zmk_hid_keyboard_clear();
     int ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
-        LOG_ERR("Failed to clear keyboard state: %d", ret);
         return ret;
     }
     k_msleep(50);
@@ -32,12 +24,10 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
     // Press modifier first
     ret = zmk_hid_keyboard_press(modifier);
     if (ret < 0) {
-        LOG_ERR("Failed to press modifier %d: %d", modifier, ret);
         return ret;
     }
     ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
-        LOG_ERR("Failed to send modifier report: %d", ret);
         return ret;
     }
     k_msleep(30);
@@ -45,14 +35,12 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
     // Press main key
     ret = zmk_hid_keyboard_press(key);
     if (ret < 0) {
-        LOG_ERR("Failed to press key %d: %d", key, ret);
         zmk_hid_keyboard_release(modifier);
         zmk_endpoints_send_report(0x07);
         return ret;
     }
     ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
-        LOG_ERR("Failed to send key report: %d", ret);
         return ret;
     }
     k_msleep(hold_time);
@@ -60,22 +48,22 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
     // Release main key first
     ret = zmk_hid_keyboard_release(key);
     if (ret < 0) {
-        LOG_ERR("Failed to release key: %d", ret);
+        // Continue with cleanup
     }
     ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
-        LOG_ERR("Failed to send key release report: %d", ret);
+        // Continue with cleanup
     }
     k_msleep(20);
 
     // Release modifier
     ret = zmk_hid_keyboard_release(modifier);
     if (ret < 0) {
-        LOG_ERR("Failed to release modifier: %d", ret);
+        // Continue with cleanup
     }
     ret = zmk_endpoints_send_report(0x07);
     if (ret < 0) {
-        LOG_ERR("Failed to send modifier release report: %d", ret);
+        // Continue with cleanup
     }
     k_msleep(30);
 
@@ -84,20 +72,16 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
     ret = zmk_endpoints_send_report(0x07);
     k_msleep(20);
 
-    LOG_INF("%s sequence completed", description);
     return 0;
 }
 
 // ZOOM IN with multiple fallback methods
 void send_trackpad_zoom_in(void) {
-    LOG_INF("=== STARTING ZOOM IN SEQUENCE ===");
-
     // Method 1: Ctrl + Plus (using correct keycodes)
     send_zoom_combo(LCTRL, EQUAL, "Ctrl+Equal(Plus)", 150);
     k_msleep(100);
 
     // Method 2: Ctrl + Shift + Plus (explicit plus)
-    LOG_INF("Trying Ctrl+Shift+Plus explicitly");
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(0x07);
     k_msleep(50);
@@ -122,14 +106,10 @@ void send_trackpad_zoom_in(void) {
 
     // Method 4: Try numeric keypad plus
     send_zoom_combo(LCTRL, KP_PLUS, "Ctrl+NumPad_Plus", 150);
-
-    LOG_INF("=== ZOOM IN SEQUENCE COMPLETE ===");
 }
 
 // ZOOM OUT with multiple fallback methods
 void send_trackpad_zoom_out(void) {
-    LOG_INF("=== STARTING ZOOM OUT SEQUENCE ===");
-
     // Method 1: Ctrl + Minus
     send_zoom_combo(LCTRL, MINUS, "Ctrl+Minus", 150);
     k_msleep(100);
@@ -140,17 +120,13 @@ void send_trackpad_zoom_out(void) {
 
     // Method 3: Numeric keypad minus
     send_zoom_combo(LCTRL, KP_MINUS, "Ctrl+NumPad_Minus", 150);
-
-    LOG_INF("=== ZOOM OUT SEQUENCE COMPLETE ===");
 }
 
 // Test functions
 void send_trackpad_f3(void) {
-    LOG_INF("*** TRACKPAD F3 TEST ***");
     send_zoom_combo(0, F3, "F3_Test", 100);
 }
 
 void send_trackpad_f4(void) {
-    LOG_INF("*** TRACKPAD F4 TEST ***");
     send_zoom_combo(0, F4, "F4_Test", 100);
 }

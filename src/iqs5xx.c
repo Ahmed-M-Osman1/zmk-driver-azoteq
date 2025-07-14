@@ -1,10 +1,4 @@
-/*
- * Copyright (c) 2020 The ZMK Contributors
- *
- * SPDX-License-Identifier: MIT
- */
 #define DT_DRV_COMPAT azoteq_iqs5xx
-
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
