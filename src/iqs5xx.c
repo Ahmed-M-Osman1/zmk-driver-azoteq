@@ -474,9 +474,9 @@ static struct iqs5xx_data iqs5xx_data_0 = {
 // Device configuration from devicetree - ENHANCED VERSION WITH COORDINATE TRANSFORMATION
 static const struct iqs5xx_config iqs5xx_config_0 = {
     .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
+    .rotate_90 = DT_INST_PROP(0, rotate_90),
     .invert_x = DT_INST_PROP(0, invert_x),
     .invert_y = DT_INST_PROP(0, invert_y),
-    .rotate_90 = DT_INST_PROP(0, rotate_90),
     .rotate_270 = DT_INST_PROP(0, rotate_270),
     .sensitivity = DT_INST_PROP_OR(0, sensitivity, 128),
 };
