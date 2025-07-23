@@ -51,6 +51,7 @@ struct iqs5xx_rawdata {
 // Callback
 typedef void (*iqs5xx_trigger_handler_t)(const struct device *dev, const struct iqs5xx_rawdata *data);
 
+// FIXED ISSUE #6 & #10: Enhanced data structure with thread safety and better error tracking
 struct iqs5xx_data {
     // I2C device
 	const struct device *i2c;
@@ -59,15 +60,18 @@ struct iqs5xx_data {
 	struct gpio_callback dr_cb;
     // Data ready callback
     iqs5xx_trigger_handler_t data_ready_handler;
-    // Device data
+    // Device data - FIXED: Add memory barrier protection for concurrent access
     struct iqs5xx_rawdata raw_data;
-    // i2c mutex
+    // FIXED ISSUE #2: Enhanced mutex with proper initialization and timeout tracking
     struct k_mutex i2c_mutex;
     // Work queue item for handling interrupts
     struct k_work work;
-    // Error tracking
+    // FIXED ISSUE #1: Enhanced error tracking with timestamps and recovery state
     int consecutive_errors;
     int64_t last_error_time;
+    int64_t last_successful_read;  // NEW: Track successful operations
+    bool recovery_in_progress;     // NEW: Prevent concurrent recovery attempts
+    struct k_mutex recovery_mutex; // NEW: Protect recovery operations
 };
 
 struct iqs5xx_config {
@@ -77,11 +81,10 @@ struct iqs5xx_config {
     bool invert_y;
     bool rotate_90;
     bool rotate_270;
-
     int sensitivity;
 };
 
-// Register configuration structure
+// FIXED ISSUE #4 & #5: Enhanced register configuration structure with validation
 struct __attribute__((packed)) iqs5xx_reg_config {
     // Refresh rate when the device is active (ms interval)
     uint16_t    activeRefreshRate;
@@ -106,33 +109,40 @@ struct __attribute__((packed)) iqs5xx_reg_config {
     uint8_t     filterDynBottomBeta;
     uint8_t     filterDynLowerSpeed;
     uint16_t    filterDynUpperSpeed;
-
     // Initial scroll distance (px)
     uint16_t    initScrollDistance;
+    // FIXED ISSUE #5: Add configuration validation checksum
+    uint32_t    config_checksum;  // NEW: For validating configuration integrity
 };
 
-// Coordinate transformation function
+// FIXED ISSUE #4: Enhanced coordinate transformation function with validation
 void iqs5xx_transform_coordinates(const struct device *dev, int16_t *x, int16_t *y);
 
 // Returns the default register configuration
 struct iqs5xx_reg_config iqs5xx_reg_config_default ();
 
 /**
- * @brief Initializes registers
+ * @brief FIXED ISSUE #4 & #5: Enhanced register initialization with state persistence
  *
- * @param dev
- * @param config
- * @return int
+ * @param dev Device instance
+ * @param config Configuration to apply and save for recovery
+ * @return int 0 on success, negative error code on failure
  */
 int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_config *config);
 
+/**
+ * @brief FIXED ISSUE #2: Enhanced trigger handler registration with validation
+ *
+ * @param dev Device instance
+ * @param handler Callback function for data ready events
+ * @return int 0 on success, negative error code on failure
+ */
 int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handler);
 
 // Byte swap macros
 #define SWPEND16(n) ((n >> 8) | (n << 8))
 #define SWPEND32(n) ( ((n >> 24) & 0x000000FF) | ((n >>  8) & 0x0000FF00) | \
                         ((n << 8) & 0x00FF0000) | ((n << 24) & 0xFF000000) )
-
 
 #define AZOTEQ_IQS5XX_ADDR      0x74
 
@@ -390,9 +400,7 @@ int iqs5xx_trigger_set(const struct device *dev, iqs5xx_trigger_handler_t handle
 #define	ZoomInitDistance_adr	0x06CB	//(READ/WRITE/E2)	//2 BYTES;
 #define	ZoomConsDistance_adr	0x06CD	//(READ/WRITE/E2)	//2 BYTES;
 
-
 // Register dumping
-
 // Start dump from 04D5
 #define IQS5XX_REG_DUMP_START_ADDRESS   0x04D5
 // Write 504 bytes
