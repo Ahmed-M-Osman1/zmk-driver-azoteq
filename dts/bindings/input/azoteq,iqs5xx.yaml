@@ -36,3 +36,11 @@ properties:
     type: int
     default: 20
     description: Idle refresh rate in milliseconds
+
+  rotate-90:
+    type: boolean
+    description: Rotate coordinates 90 degrees clockwise (X becomes Y, Y becomes -X)
+
+    rotate-270:
+      type: boolean
+      description: Rotate coordinates 270 degrees clockwise (X becomes -Y, Y becomes X)
