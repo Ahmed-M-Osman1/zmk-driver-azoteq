@@ -72,9 +72,17 @@ struct iqs5xx_data {
 
 struct iqs5xx_config {
     // Data ready GPIO spec from devicetree
-    const struct gpio_dt_spec dr;
-    // Note: invert_x, invert_y removed for simplicity
-    // Can be added back later when needed
+       const struct gpio_dt_spec dr;
+    // Rotation configuration
+       bool rotate_90;
+       bool rotate_270;
+       bool invert_x;
+       bool invert_y;
+    // Sensitivity multiplier
+       uint16_t sensitivity;
+    // Refresh rates
+       uint16_t refresh_rate_active;
+       uint16_t refresh_rate_idle;
 };
 
 // Register configuration structure

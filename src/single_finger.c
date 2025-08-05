@@ -5,6 +5,8 @@
 #include "gesture_handlers.h"
 
 void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
+    const struct iqs5xx_config *config = dev->config;
+
     // IMMEDIATE GESTURE HANDLING - following the working code pattern
     if (data->gestures0) {
 
@@ -35,13 +37,14 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 
     // Movement handling for single finger (following working code pattern)
     if (data->finger_count == 1) {
-        float sensMp = (float)state->mouseSensitivity / 128.0F;
+        // Use sensitivity from device configuration
+        float sensMp = (float)config->sensitivity / 128.0F;
 
         // Process movement if we have any
         if (data->rx != 0 || data->ry != 0) {
-            // FIXED: Use same axis mapping as working code
-            state->accumPos.x += data->rx * sensMp;      // rx maps to X movement
-            state->accumPos.y += data->ry * sensMp;      // ry maps to Y movement
+            // Note: rx and ry are already transformed by apply_coordinate_transform()
+            state->accumPos.x += data->rx * sensMp;
+            state->accumPos.y += data->ry * sensMp;
 
             int16_t xp = (int16_t)state->accumPos.x;
             int16_t yp = (int16_t)state->accumPos.y;

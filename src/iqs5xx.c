@@ -100,15 +100,24 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
     data->raw_data.system_info0 =   buffer[2];
     data->raw_data.system_info1 =   buffer[3];
     data->raw_data.finger_count =   buffer[4];
-    data->raw_data.rx =             buffer[5] << 8 | buffer[6];
-    data->raw_data.ry =             buffer[7] << 8 | buffer[8];
+
+    // Get raw relative coordinates
+    int16_t raw_rx = buffer[5] << 8 | buffer[6];
+    int16_t raw_ry = buffer[7] << 8 | buffer[8];
+
+    // Apply coordinate transformation
+    apply_coordinate_transform(dev, &raw_rx, &raw_ry);
+
+    // Store transformed coordinates
+    data->raw_data.rx = raw_rx;
+    data->raw_data.ry = raw_ry;
 
     // Log interesting data
     if (data->raw_data.finger_count > 0 || data->raw_data.gestures0 || data->raw_data.gestures1) {
         return 0;
     }
 
-    // Parse finger data
+    // Parse finger data - also transform absolute coordinates if needed
     for(int i = 0; i < 5; i++) {
         const int p = 9 + (7 * i);
         data->raw_data.fingers[i].ax = buffer[p + 0] << 8 | buffer[p + 1];
@@ -388,6 +397,31 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     }
 }
 
+static void apply_coordinate_transform(const struct device *dev, int16_t *x, int16_t *y) {
+    const struct iqs5xx_config *config = dev->config;
+    int16_t orig_x = *x;
+    int16_t orig_y = *y;
+
+    // Apply rotation first
+    if (config->rotate_90) {
+        // 90 degrees clockwise: X becomes Y, Y becomes -X
+        *x = orig_y;
+        *y = -orig_x;
+    } else if (config->rotate_270) {
+        // 270 degrees clockwise: X becomes -Y, Y becomes X
+        *x = -orig_y;
+        *y = orig_x;
+    }
+
+    // Apply axis inversion after rotation
+    if (config->invert_x) {
+        *x = -*x;
+    }
+    if (config->invert_y) {
+        *y = -*y;
+    }
+}
+
 static int iqs5xx_init(const struct device *dev) {
     struct iqs5xx_data *data = dev->data;
     const struct iqs5xx_config *config = dev->config;
@@ -469,6 +503,13 @@ static struct iqs5xx_data iqs5xx_data_0 = {
 // Device configuration from devicetree - SAFE VERSION WITH FALLBACK
 static const struct iqs5xx_config iqs5xx_config_0 = {
     .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
+    .rotate_90 = DT_INST_PROP(0, rotate_90),
+    .rotate_270 = DT_INST_PROP(0, rotate_270),
+    .invert_x = DT_INST_PROP(0, invert_x),
+    .invert_y = DT_INST_PROP(0, invert_y),
+    .sensitivity = DT_INST_PROP_OR(0, sensitivity, 128),
+    .refresh_rate_active = DT_INST_PROP_OR(0, refresh_rate_active, 5),
+    .refresh_rate_idle = DT_INST_PROP_OR(0, refresh_rate_idle, 20),
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,
