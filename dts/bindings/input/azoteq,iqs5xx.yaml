@@ -1,4 +1,4 @@
-description: | 
+description: |
   Sensor driver for the Azoteq IQS5XX trackpad IC
 compatible: "azoteq,iqs5xx"
 
@@ -17,6 +17,14 @@ properties:
   invert-y:
     type: boolean
     description: Invert Y-axis movement
+
+  rotate-90:
+    type: boolean
+    description: Rotate coordinates 90 degrees clockwise (X becomes Y, Y becomes -X)
+
+  rotate-270:
+    type: boolean
+    description: Rotate coordinates 270 degrees clockwise (X becomes -Y, Y becomes X)
 
   no-taps:
     type: boolean
