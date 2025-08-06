@@ -17,29 +17,42 @@ LOG_MODULE_REGISTER(trackpad, CONFIG_ZMK_LOG_LEVEL);
 static struct gesture_state g_gesture_state = {0};
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
-static int64_t last_event_time = 0; // For rate-limiting
+static int64_t last_event_time = 0;
 
-// Optimized input event sending
+// FIXED: Robust input event sending with validation
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     event_count++;
 
-    // DEBUG: Log all input events
-    LOG_INF("Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
+    // Validate and clamp input values to prevent erratic behavior
+    if (type == INPUT_EV_REL) {
+        // Clamp relative movements to reasonable bounds
+        if (abs(value) > 127) {
+            LOG_WRN("Clamping large movement: %d -> %d", value, (value > 0) ? 127 : -127);
+            value = (value > 0) ? 127 : -127;
+        }
+
+        // Filter out tiny movements that might be noise
+        if (abs(value) < 1) {
+            return;
+        }
+    }
+
+    // Log important events for debugging
+    if (type == INPUT_EV_KEY || (type == INPUT_EV_REL && abs(value) > 5)) {
+        LOG_INF("Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
+    }
 
     if (trackpad_device) {
         int ret = input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
         if (ret < 0) {
             LOG_ERR("Failed to send input event: %d", ret);
-            return;
         }
-        LOG_DBG("Input event sent successfully");
     } else {
         LOG_ERR("Trackpad device not initialized!");
-        return;
     }
 }
 
-// Initialize gesture state functions
+// Initialize gesture state functions - RESTORED from power-management branch
 void single_finger_init(void) {
     LOG_INF("Initializing single finger gestures");
     g_gesture_state.isDragging = false;
@@ -60,7 +73,7 @@ void three_finger_init(void) {
     g_gesture_state.gestureTriggered = false;
 }
 
-// FIXED: Handle gestures even when finger_count == 0
+// FIXED: Simplified trigger handler focusing on stability
 static void trackpad_trigger_handler(const struct device *dev, const struct iqs5xx_rawdata *data) {
     static int trigger_count = 0;
     int64_t current_time = k_uptime_get();
@@ -71,24 +84,24 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     bool has_gesture = (data->gestures0 != 0) || (data->gestures1 != 0);
     bool finger_count_changed = (g_gesture_state.lastFingerCount != data->finger_count);
 
-    // DEBUG: Log trigger events
-    if (trigger_count % 50 == 1 || has_gesture || finger_count_changed) {  // Reduce log spam
-        LOG_INF("Trigger #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=(%d,%d)",
-                trigger_count, data->finger_count, data->gestures0, data->gestures1,
-                data->rx, data->ry);
-    }
-
     // Rate limit ONLY movement events, NEVER gesture events
     if (!has_gesture && !finger_count_changed && (current_time - last_event_time < 20)) {
         return; // Skip only movement-only events
     }
     last_event_time = current_time;
 
+    // Log important activity
+    if (has_gesture || finger_count_changed || (trigger_count % 100 == 1)) {
+        LOG_INF("Trigger #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=(%d,%d)",
+                trigger_count, data->finger_count, data->gestures0, data->gestures1,
+                data->rx, data->ry);
+    }
+
     // FIXED: Process gestures FIRST, before finger count logic
     if (has_gesture) {
         LOG_INF("=== GESTURE DETECTED: g0=0x%02x, g1=0x%02x ===", data->gestures0, data->gestures1);
 
-        // Handle single finger gestures (including taps that happen on finger lift)
+        // Handle single finger gestures
         if (data->gestures0) {
             LOG_INF("Handling single finger gesture: 0x%02x", data->gestures0);
             handle_single_finger_gestures(dev, data, &g_gesture_state);
@@ -191,6 +204,14 @@ static int trackpad_init(void) {
     // Set the global trackpad device reference
     trackpad_device = trackpad;
     LOG_INF("Global trackpad device reference set");
+
+    // Get configuration and initialize gesture state with proper sensitivity
+    const struct iqs5xx_config *config = trackpad->config;
+    g_gesture_state.mouseSensitivity = config->sensitivity;
+
+    LOG_INF("Trackpad config: sensitivity=%d, rot90=%d, rot180=%d, rot270=%d, inv_x=%d, inv_y=%d",
+            config->sensitivity, config->rotate_90, config->rotate_180, config->rotate_270,
+            config->invert_x, config->invert_y);
 
     // Initialize trackpad keyboard events
     int ret = trackpad_keyboard_init(trackpad);
