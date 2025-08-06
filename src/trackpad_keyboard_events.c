@@ -114,7 +114,7 @@ void send_trackpad_zoom_in(void) {
     k_msleep(100);
 
     // Method 4: Try numeric keypad plus
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL, HID_USAGE_KEY_KEYPAD_PLUS_AND_PLUS, "Ctrl+NumPad_Plus", 150);
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL, HID_USAGE_KEY_KEYPAD_PLUS_MINUS, "Ctrl+NumPad_Plus", 150);
 }
 
 // ZOOM OUT with multiple fallback methods
