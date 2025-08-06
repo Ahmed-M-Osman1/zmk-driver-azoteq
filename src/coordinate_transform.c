@@ -2,6 +2,8 @@
 #include <zephyr/logging/log.h>
 #include "iqs5xx.h"
 
+LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
+
 // Apply coordinate transformations based on configuration
 struct coord_transform apply_coordinate_transform(int16_t x, int16_t y, const struct iqs5xx_config *config) {
     struct coord_transform result = {x, y};
@@ -51,5 +53,4 @@ void apply_finger_transform(struct iqs5xx_finger *finger, const struct iqs5xx_co
 
     finger->ax = (uint16_t)transformed.x;
     finger->ay = (uint16_t)transformed.y;
-
 }

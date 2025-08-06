@@ -37,7 +37,9 @@ properties:
   sensitivity:
     type: int
     default: 128
-    description: Mouse sensitivity multiplier (64=slower, 128=normal, 256=faster)
+    minimum: 64
+    maximum: 255
+    description: Mouse sensitivity multiplier (64=slower, 128=normal, 255=faster)
 
   refresh-rate-active:
     type: int

@@ -12,7 +12,10 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/sys/util.h>
 #include "iqs5xx.h"
+
+LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 static int iqs_regdump_err = 0;
 
@@ -397,6 +400,7 @@ static int iqs5xx_init(const struct device *dev) {
     data->i2c = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(0)));
 
     if (!data->i2c) {
+        LOG_ERR("I2C device not found");
         return -ENODEV;
     }
 
@@ -405,8 +409,10 @@ static int iqs5xx_init(const struct device *dev) {
     if (!device_is_ready(config->dr.port)) {
         // Check if it's an empty GPIO spec (fallback case)
         if (config->dr.port == NULL) {
+            LOG_ERR("GPIO device is NULL");
             return -ENODEV;
         } else {
+            LOG_ERR("GPIO device not ready");
             return -ENODEV;
         }
     }
@@ -417,6 +423,7 @@ static int iqs5xx_init(const struct device *dev) {
     // Configure data ready pin
     int ret = gpio_pin_configure_dt(&config->dr, GPIO_INPUT);
     if (ret < 0) {
+        LOG_ERR("Failed to configure GPIO pin: %d", ret);
         return ret;
     }
 
@@ -426,12 +433,14 @@ static int iqs5xx_init(const struct device *dev) {
     // Add callback
     ret = gpio_add_callback(config->dr.port, &data->dr_cb);
     if (ret < 0) {
+        LOG_ERR("Failed to add GPIO callback: %d", ret);
         return ret;
     }
 
     // Configure data ready interrupt
     ret = gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_EDGE_TO_ACTIVE);
     if (ret < 0) {
+        LOG_ERR("Failed to configure GPIO interrupt: %d", ret);
         return ret;
     }
 
@@ -439,8 +448,10 @@ static int iqs5xx_init(const struct device *dev) {
     uint8_t test_buf[2];
     ret = iqs5xx_seq_read(dev, ProductNumber_adr, test_buf, 2);
     if (ret < 0) {
+        LOG_WRN("I2C test read failed: %d", ret);
         return 0;
     } else {
+        LOG_INF("I2C communication test successful");
         return 0;
     }
 
@@ -448,14 +459,17 @@ static int iqs5xx_init(const struct device *dev) {
     struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
     ret = iqs5xx_registers_init(dev, &iqs5xx_registers);
     if(ret) {
+        LOG_ERR("Failed to initialize registers: %d", ret);
         return ret;
     }
 
     // Final test - try to read some data
     ret = iqs5xx_sample_fetch(dev);
     if (ret < 0) {
+        LOG_WRN("Sample fetch test failed: %d", ret);
         return 0;
     } else {
+        LOG_INF("Sample fetch test successful");
         return 0;
     }
 
@@ -467,7 +481,7 @@ static struct iqs5xx_data iqs5xx_data_0 = {
     .data_ready_handler = NULL
 };
 
-// Device configuration from devicetree - SAFE VERSION WITH FALLBACK
+// Device configuration from devicetree - SAFE VERSION WITH BOUNDS CHECK
 static const struct iqs5xx_config iqs5xx_config_0 = {
     .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
     .invert_x = DT_INST_PROP(0, invert_x),
@@ -475,7 +489,8 @@ static const struct iqs5xx_config iqs5xx_config_0 = {
     .rotate_90 = DT_INST_PROP(0, rotate_90),
     .rotate_180 = DT_INST_PROP(0, rotate_180),
     .rotate_270 = DT_INST_PROP(0, rotate_270),
-    .sensitivity = DT_INST_PROP_OR(0, sensitivity, 128),
+    // Clamp sensitivity to valid uint8_t range to prevent overflow
+    .sensitivity = (uint8_t)MIN(255, MAX(64, DT_INST_PROP_OR(0, sensitivity, 128))),
 };
 
 DEVICE_DT_INST_DEFINE(0, iqs5xx_init, NULL, &iqs5xx_data_0, &iqs5xx_config_0,

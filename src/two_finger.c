@@ -64,14 +64,9 @@ static float calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t 
     return sqrtf(dx * dx + dy * dy);
 }
 
-// Calculate average position of two fingers
-static void calculate_center_point(const struct iqs5xx_rawdata *data, float *center_x, float *center_y) {
-    *center_x = (float)(data->fingers[0].ax + data->fingers[1].ax) / 2.0f;
-    *center_y = (float)(data->fingers[0].ay + data->fingers[1].ay) / 2.0f;
-}
-
 // IMMEDIATE two-finger tap detection from hardware gesture
 static void handle_hardware_two_finger_tap(void) {
+    LOG_DBG("Two finger tap detected");
     send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
     send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
 }
@@ -158,8 +153,10 @@ static void handle_zoom_gesture(const struct iqs5xx_rawdata *data) {
     // Send zoom command if stable enough
     if (two_finger_state.stable_readings >= 1 || fabsf(distance_change) > ZOOM_THRESHOLD_PX * 2) {
         if (distance_change > 0) {
+            LOG_INF("Zoom in gesture detected");
             send_trackpad_zoom_in();
         } else {
+            LOG_INF("Zoom out gesture detected");
             send_trackpad_zoom_out();
         }
         two_finger_state.zoom_command_sent = true;
@@ -195,6 +192,7 @@ static void handle_scroll_gesture(const struct iqs5xx_rawdata *data) {
 
             send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, -scroll_x, true);
             two_finger_state.last_scroll_time = current_time;
+            LOG_DBG("Horizontal scroll: %d", scroll_x);
         }
     } else if (two_finger_state.gesture_type == TWO_FINGER_VERTICAL_SCROLL) {
         if (fabsf(two_finger_state.scroll_accumulator_y) >= SCROLL_REPORT_DISTANCE) {
@@ -203,6 +201,7 @@ static void handle_scroll_gesture(const struct iqs5xx_rawdata *data) {
 
             send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, -scroll_y, true);
             two_finger_state.last_scroll_time = current_time;
+            LOG_DBG("Vertical scroll: %d", scroll_y);
         }
     }
 
@@ -235,6 +234,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
         // If fingers are very close (likely a tap), reduce detection time
         if (initial_distance < 150.0f) {
+            LOG_DBG("Close finger positioning detected for potential tap");
         }
     }
 
@@ -286,6 +286,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         state->twoFingerStartPos[1].x = data->fingers[1].ax;
         state->twoFingerStartPos[1].y = data->fingers[1].ay;
 
+        LOG_DBG("Two finger session started");
         return;
     }
 
@@ -301,6 +302,7 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         two_finger_state.gesture_type = detect_gesture_type(data);
         if (two_finger_state.gesture_type != TWO_FINGER_NONE) {
             two_finger_state.gesture_locked = true;
+            LOG_DBG("Gesture type locked: %d", two_finger_state.gesture_type);
         }
     }
 
@@ -326,6 +328,7 @@ void reset_two_finger_state(struct gesture_state *state) {
         // SIMPLIFIED: Only handle fallback tap if no other gesture was performed AND it was quick
         if (!two_finger_state.gesture_locked &&
             k_uptime_get() - two_finger_state.start_time < TAP_MAX_TIME_MS) {
+            LOG_DBG("Two finger fallback tap");
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
         }
@@ -336,5 +339,7 @@ void reset_two_finger_state(struct gesture_state *state) {
         // Clear legacy state
         state->twoFingerActive = false;
         state->lastXScrollReport = 0;
+
+        LOG_DBG("Two finger state reset");
     }
 }
