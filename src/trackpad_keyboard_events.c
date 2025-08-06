@@ -124,7 +124,7 @@ void send_trackpad_zoom_out(void) {
     k_msleep(100);
 
     // Method 2: Cmd+Minus for Mac
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTGUI, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE, "Cmd+Minus(Mac)", 150);
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFT_GUI, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE, "Cmd+Minus(Mac)", 150);
     k_msleep(100);
 
     // Method 3: Numeric keypad minus
