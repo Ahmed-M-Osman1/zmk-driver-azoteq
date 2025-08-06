@@ -13,7 +13,7 @@
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
 
-LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
+LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 static struct gesture_state g_gesture_state = {0};
 static const struct device *trackpad;
