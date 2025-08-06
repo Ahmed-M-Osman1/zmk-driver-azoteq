@@ -35,8 +35,8 @@ static void send_control_up(void) {
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
-    // Press Control (CORRECTED CONSTANT NAME)
-    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+    // Press Control (CORRECTED CONSTANT NAME - NO UNDERSCORES)
+    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
     if (ret1 < 0) {
         return;
     }
@@ -44,9 +44,9 @@ static void send_control_up(void) {
     k_msleep(10);
 
     // Press Up Arrow (CORRECTED CONSTANT NAME)
-    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_UP_ARROW);
+    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_UPARROW);
     if (ret2 < 0) {
-        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
         zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
         return;
     }
@@ -54,12 +54,12 @@ static void send_control_up(void) {
     k_msleep(50); // Hold the combination
 
     // Release Up Arrow
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_UP_ARROW);
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_UPARROW);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
     // Release Control
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(20);
 
@@ -76,8 +76,8 @@ static void send_control_down(void) {
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
-    // Press Control (CORRECTED CONSTANT NAME)
-    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+    // Press Control (CORRECTED CONSTANT NAME - NO UNDERSCORES)
+    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
     if (ret1 < 0) {
         return;
     }
@@ -85,9 +85,9 @@ static void send_control_down(void) {
     k_msleep(10);
 
     // Press Down Arrow (CORRECTED CONSTANT NAME)
-    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_DOWN_ARROW);
+    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_DOWNARROW);
     if (ret2 < 0) {
-        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
         zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
         return;
     }
@@ -95,12 +95,12 @@ static void send_control_down(void) {
     k_msleep(50); // Hold the combination
 
     // Release Down Arrow
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_DOWN_ARROW);
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_DOWNARROW);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
     // Release Control
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(20);
 
