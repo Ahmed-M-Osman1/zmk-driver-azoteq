@@ -64,8 +64,8 @@ static float calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t 
     return sqrtf(dx * dx + dy * dy);
 }
 
-// Calculate average position of two fingers
-static void calculate_center_point(const struct iqs5xx_rawdata *data, float *center_x, float *center_y) {
+// Calculate average position of two fingers - FIXED: marked as unused to suppress warning
+static void __attribute__((unused)) calculate_center_point(const struct iqs5xx_rawdata *data, float *center_x, float *center_y) {
     *center_x = (float)(data->fingers[0].ax + data->fingers[1].ax) / 2.0f;
     *center_y = (float)(data->fingers[0].ay + data->fingers[1].ay) / 2.0f;
 }
