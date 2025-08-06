@@ -110,7 +110,7 @@ void send_trackpad_zoom_in(void) {
     k_msleep(100);
 
     // Method 3: Cmd+Plus for Mac compatibility
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTGUI, HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS, "Cmd+Plus(Mac)", 150);
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFT_GUI, HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS, "Cmd+Plus(Mac)", 150);
     k_msleep(100);
 
     // Method 4: Try numeric keypad plus
