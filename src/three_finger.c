@@ -7,14 +7,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
-#include <dt-bindings/zmk/keys.h>
-#include <zmk/hid.h>
-#include <zmk/endpoints.h>
 #include "iqs5xx.h"
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
-
-LOG_MODULE_DECLARE(trackpad, CONFIG_ZMK_LOG_LEVEL);
 
 // Global cooldown to prevent gesture re-triggering
 static int64_t global_gesture_cooldown = 0;
@@ -32,90 +27,82 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
 static void send_control_up(void) {
     // Clear any existing HID state first
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Press Control
-    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+    int ret1 = zmk_hid_keyboard_press(LCTRL);
     if (ret1 < 0) {
-        LOG_ERR("Failed to press Ctrl: %d", ret1);
         return;
     }
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Press Up Arrow
-    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_UP_ARROW);
+    int ret2 = zmk_hid_keyboard_press(UP_ARROW);
     if (ret2 < 0) {
-        LOG_ERR("Failed to press Up Arrow: %d", ret2);
-        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
-        zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+        zmk_hid_keyboard_release(LCTRL);
+        zmk_endpoints_send_report(0x07);
         return;
     }
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(50); // Hold the combination
 
     // Release Up Arrow
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_UP_ARROW);
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_hid_keyboard_release(UP_ARROW);
+    zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Release Control
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_hid_keyboard_release(LCTRL);
+    zmk_endpoints_send_report(0x07);
     k_msleep(20);
 
     // CRITICAL FIX: Complete cleanup after Mission Control
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(50); // Give extra time for cleanup
-
-    LOG_DBG("Sent Mission Control (Ctrl+Up)");
 }
 
 // FIXED: Proper state cleanup after Application Windows
 static void send_control_down(void) {
     // Clear any existing HID state first
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Press Control
-    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
+    int ret1 = zmk_hid_keyboard_press(LCTRL);
     if (ret1 < 0) {
-        LOG_ERR("Failed to press Ctrl: %d", ret1);
         return;
     }
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Press Down Arrow
-    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_DOWN_ARROW);
+    int ret2 = zmk_hid_keyboard_press(DOWN_ARROW);
     if (ret2 < 0) {
-        LOG_ERR("Failed to press Down Arrow: %d", ret2);
-        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
-        zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+        zmk_hid_keyboard_release(LCTRL);
+        zmk_endpoints_send_report(0x07);
         return;
     }
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(50); // Hold the combination
 
     // Release Down Arrow
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_DOWN_ARROW);
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_hid_keyboard_release(DOWN_ARROW);
+    zmk_endpoints_send_report(0x07);
     k_msleep(10);
 
     // Release Control
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_hid_keyboard_release(LCTRL);
+    zmk_endpoints_send_report(0x07);
     k_msleep(20);
 
     // CRITICAL FIX: Complete cleanup after Application Windows
     zmk_hid_keyboard_clear();
-    zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
+    zmk_endpoints_send_report(0x07);
     k_msleep(50); // Give extra time for cleanup
-
-    LOG_DBG("Sent Application Windows (Ctrl+Down)");
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
@@ -142,7 +129,6 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
             state->threeFingerStartPos[i].x = data->fingers[i].ax;
             state->threeFingerStartPos[i].y = data->fingers[i].ay;
         }
-        LOG_DBG("Three finger gesture started");
         return;
     }
 
@@ -167,11 +153,9 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         if (fabsf(yMovement) > 50.0f) {
             if (yMovement > 0) {
                 // SWIPE DOWN = Application Windows (App Exposé)
-                LOG_INF("Three finger swipe down detected - Application Windows");
                 send_control_down();
             } else {
-                // SWIPE UP = Mission Control
-                LOG_INF("Three finger swipe up detected - Mission Control");
+                // SWIPE UP = Mission Control - THIS IS THE PROBLEMATIC ONE
                 send_control_up();
             }
 
@@ -197,14 +181,12 @@ void reset_three_finger_state(struct gesture_state *state) {
 
         // Check if we're in gesture cooldown
         if (k_uptime_get() - global_gesture_cooldown > 500) {
-            LOG_DBG("Three finger tap detected");
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
         }
     }
 
     if (state->threeFingersPressed) {
-        LOG_DBG("Three finger gesture ended");
         state->threeFingersPressed = false;
         state->gestureTriggered = false;
     }
