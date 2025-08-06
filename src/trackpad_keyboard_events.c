@@ -128,7 +128,7 @@ void send_trackpad_zoom_out(void) {
     k_msleep(100);
 
     // Method 3: Numeric keypad minus
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL, HID_USAGE_KEY_KEYPAD_MINUS_AND_MINUS, "Ctrl+NumPad_Minus", 150);
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL, HID_USAGE_KEY_KEYPAD_PLUS_MINUS, "Ctrl+NumPad_Minus", 150);
 }
 
 // Test functions
