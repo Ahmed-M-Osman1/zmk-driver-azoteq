@@ -14,7 +14,12 @@
 #include <zephyr/devicetree.h>
 #include "iqs5xx.h"
 
+LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
+
 static int iqs_regdump_err = 0;
+
+// Forward declaration
+static void apply_coordinate_transform(const struct device *dev, int16_t *x, int16_t *y);
 
 // Default config
 struct iqs5xx_reg_config iqs5xx_reg_config_default () {
@@ -80,6 +85,31 @@ static int iqs5xx_reg_dump (const struct device *dev) {
     return ret;
 }
 
+static void apply_coordinate_transform(const struct device *dev, int16_t *x, int16_t *y) {
+    const struct iqs5xx_config *config = dev->config;
+    int16_t orig_x = *x;
+    int16_t orig_y = *y;
+
+    // Apply rotation first
+    if (config->rotate_90) {
+        // 90 degrees clockwise: X becomes Y, Y becomes -X
+        *x = orig_y;
+        *y = -orig_x;
+    } else if (config->rotate_270) {
+        // 270 degrees clockwise: X becomes -Y, Y becomes X
+        *x = -orig_y;
+        *y = orig_x;
+    }
+
+    // Apply axis inversion after rotation
+    if (config->invert_x) {
+        *x = -*x;
+    }
+    if (config->invert_y) {
+        *y = -*y;
+    }
+}
+
 /**
  * @brief Read data from IQS5XX
 */
@@ -91,6 +121,7 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
     iqs5xx_write(dev, END_WINDOW, 0, 1);
 
     if (res < 0) {
+        LOG_ERR("Failed to read data from IQS5XX: %d", res);
         return res;
     }
 
@@ -112,11 +143,6 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
     data->raw_data.rx = raw_rx;
     data->raw_data.ry = raw_ry;
 
-    // Log interesting data
-    if (data->raw_data.finger_count > 0 || data->raw_data.gestures0 || data->raw_data.gestures1) {
-        return 0;
-    }
-
     // Parse finger data - also transform absolute coordinates if needed
     for(int i = 0; i < 5; i++) {
         const int p = 9 + (7 * i);
@@ -124,10 +150,6 @@ static int iqs5xx_sample_fetch (const struct device *dev) {
         data->raw_data.fingers[i].ay = buffer[p + 2] << 8 | buffer[p + 3];
         data->raw_data.fingers[i].strength = buffer[p + 4] << 8 | buffer[p + 5];
         data->raw_data.fingers[i].area= buffer[p + 6];
-
-        if (i < data->raw_data.finger_count && data->raw_data.fingers[i].strength > 0) {
-            return 0;
-        }
     }
 
     return 0;
@@ -145,8 +167,6 @@ static void iqs5xx_work_cb(struct k_work *work) {
 
         if (data->data_ready_handler != NULL) {
             data->data_ready_handler(data->dev, &data->raw_data);
-        } else {
-            return;
         }
     } else {
         // I2C Error handling
@@ -155,6 +175,7 @@ static void iqs5xx_work_cb(struct k_work *work) {
 
         // If we have too many consecutive errors, try recovery
         if (data->consecutive_errors >= 15) {
+            LOG_WRN("Too many I2C errors, attempting recovery");
             // Reset error counter
             data->consecutive_errors = 0;
             data->last_error_time = current_time;
@@ -237,6 +258,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     }
 
     if (timeout >= 1000) {
+        LOG_ERR("Timeout waiting for data ready pin");
         k_mutex_unlock(&data->i2c_mutex);
         return -ETIMEDOUT;
     }
@@ -245,6 +267,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     uint8_t buf = RESET_TP;
     int ret = iqs5xx_write(dev, SystemControl1_adr, &buf, 1);
     if (ret < 0) {
+        LOG_ERR("Failed to reset device: %d", ret);
         k_mutex_unlock(&data->i2c_mutex);
         return ret;
     }
@@ -260,6 +283,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     }
 
     if (timeout >= 1000) {
+        LOG_ERR("Timeout waiting for data ready after reset");
         k_mutex_unlock(&data->i2c_mutex);
         return -ETIMEDOUT;
     }
@@ -267,6 +291,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     // Write register dump
     iqs_regdump_err = iqs5xx_reg_dump(dev);
     if (iqs_regdump_err < 0) {
+        LOG_ERR("Failed to write register dump: %d", iqs_regdump_err);
         k_mutex_unlock(&data->i2c_mutex);
         return iqs_regdump_err;
     }
@@ -279,6 +304,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     }
 
     if (timeout >= 1000) {
+        LOG_ERR("Timeout waiting for data ready after regdump");
         k_mutex_unlock(&data->i2c_mutex);
         return -ETIMEDOUT;
     }
@@ -291,6 +317,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     ret = iqs5xx_write(dev, ActiveRR_adr, wbuff, 2);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set active refresh rate: %d", ret);
     }
 
     // Set idle refresh rate
@@ -298,18 +325,21 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     ret = iqs5xx_write(dev, IdleRR_adr, wbuff, 2);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set idle refresh rate: %d", ret);
     }
 
     // Set single finger gestures
     ret = iqs5xx_write(dev, SFGestureEnable_adr, &config->singleFingerGestureMask, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set single finger gestures: %d", ret);
     }
 
     // Set multi finger gestures
     ret = iqs5xx_write(dev, MFGestureEnable_adr, &config->multiFingerGestureMask, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set multi finger gestures: %d", ret);
     }
 
     // Set tap time
@@ -317,6 +347,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     ret = iqs5xx_write(dev, TapTime_adr, wbuff, 2);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set tap time: %d", ret);
     }
 
     // Set tap distance
@@ -324,23 +355,27 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     ret = iqs5xx_write(dev, TapDistance_adr, wbuff, 2);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set tap distance: %d", ret);
     }
 
     // Set touch multiplier
     ret = iqs5xx_write(dev, GlobalTouchSet_adr, &config->touchMultiplier, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set touch multiplier: %d", ret);
     }
 
     // Set debounce settings
     ret = iqs5xx_write(dev, ProxDb_adr, &config->debounce, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set prox debounce: %d", ret);
     }
 
     ret = iqs5xx_write(dev, TouchSnapDb_adr, &config->debounce, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set touch snap debounce: %d", ret);
     }
 
     // Set noise reduction
@@ -348,34 +383,40 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     ret = iqs5xx_write(dev, HardwareSettingsA_adr, wbuff, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set hardware settings: %d", ret);
     }
 
     // Set i2c timeout
     ret = iqs5xx_write(dev, I2CTimeout_adr, &config->i2cTimeout, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set i2c timeout: %d", ret);
     }
 
     // Set filter settings
     ret = iqs5xx_write(dev, FilterSettings0_adr, &config->filterSettings, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set filter settings: %d", ret);
     }
 
     ret = iqs5xx_write(dev, DynamicBottomBeta_adr, &config->filterDynBottomBeta, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set dynamic bottom beta: %d", ret);
     }
 
     ret = iqs5xx_write(dev, DynamicLowerSpeed_adr, &config->filterDynLowerSpeed, 1);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set dynamic lower speed: %d", ret);
     }
 
     *((uint16_t*)wbuff) = SWPEND16(config->filterDynUpperSpeed);
     ret = iqs5xx_write(dev, DynamicUpperSpeed_adr, wbuff, 2);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set dynamic upper speed: %d", ret);
     }
 
     // Set initial scroll distance
@@ -383,6 +424,7 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     ret = iqs5xx_write(dev, ScrollInitDistance_adr, wbuff, 2);
     if (ret < 0) {
         err |= ret;
+        LOG_ERR("Failed to set scroll init distance: %d", ret);
     }
 
     // Terminate transaction
@@ -391,34 +433,11 @@ int iqs5xx_registers_init (const struct device *dev, const struct iqs5xx_reg_con
     k_mutex_unlock(&data->i2c_mutex);
 
     if (err == 0) {
+        LOG_INF("IQS5XX registers initialized successfully");
         return 0;
     } else {
+        LOG_ERR("Some register writes failed, error: %d", err);
         return err;
-    }
-}
-
-static void apply_coordinate_transform(const struct device *dev, int16_t *x, int16_t *y) {
-    const struct iqs5xx_config *config = dev->config;
-    int16_t orig_x = *x;
-    int16_t orig_y = *y;
-
-    // Apply rotation first
-    if (config->rotate_90) {
-        // 90 degrees clockwise: X becomes Y, Y becomes -X
-        *x = orig_y;
-        *y = -orig_x;
-    } else if (config->rotate_270) {
-        // 270 degrees clockwise: X becomes -Y, Y becomes X
-        *x = -orig_y;
-        *y = orig_x;
-    }
-
-    // Apply axis inversion after rotation
-    if (config->invert_x) {
-        *x = -*x;
-    }
-    if (config->invert_y) {
-        *y = -*y;
     }
 }
 
@@ -430,16 +449,24 @@ static int iqs5xx_init(const struct device *dev) {
     data->i2c = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(0)));
 
     if (!data->i2c) {
+        LOG_ERR("I2C device not found");
         return -ENODEV;
     }
 
-    // RUNTIME DEVICETREE DEBUG
-    // Check if GPIO was properly initialized by GPIO_DT_SPEC_GET_OR
+    // Check if I2C device is ready
+    if (!device_is_ready(data->i2c)) {
+        LOG_ERR("I2C device not ready");
+        return -ENODEV;
+    }
+
+    // Check if GPIO was properly initialized
     if (!device_is_ready(config->dr.port)) {
         // Check if it's an empty GPIO spec (fallback case)
         if (config->dr.port == NULL) {
+            LOG_ERR("Data ready GPIO not configured");
             return -ENODEV;
         } else {
+            LOG_ERR("Data ready GPIO device not ready");
             return -ENODEV;
         }
     }
@@ -450,6 +477,7 @@ static int iqs5xx_init(const struct device *dev) {
     // Configure data ready pin
     int ret = gpio_pin_configure_dt(&config->dr, GPIO_INPUT);
     if (ret < 0) {
+        LOG_ERR("Failed to configure data ready pin: %d", ret);
         return ret;
     }
 
@@ -459,12 +487,7 @@ static int iqs5xx_init(const struct device *dev) {
     // Add callback
     ret = gpio_add_callback(config->dr.port, &data->dr_cb);
     if (ret < 0) {
-        return ret;
-    }
-
-    // Configure data ready interrupt
-    ret = gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_EDGE_TO_ACTIVE);
-    if (ret < 0) {
+        LOG_ERR("Failed to add GPIO callback: %d", ret);
         return ret;
     }
 
@@ -472,35 +495,47 @@ static int iqs5xx_init(const struct device *dev) {
     uint8_t test_buf[2];
     ret = iqs5xx_seq_read(dev, ProductNumber_adr, test_buf, 2);
     if (ret < 0) {
-        return 0;
-    } else {
-        return 0;
+        LOG_ERR("Failed to communicate with IQS5XX: %d", ret);
+        return ret; // Return the actual error, don't continue
     }
+
+    uint16_t product_number = (test_buf[0] << 8) | test_buf[1];
+    LOG_INF("IQS5XX Product Number: 0x%04X", product_number);
 
     // Initialize device registers
     struct iqs5xx_reg_config iqs5xx_registers = iqs5xx_reg_config_default();
     ret = iqs5xx_registers_init(dev, &iqs5xx_registers);
     if(ret) {
+        LOG_ERR("Failed to initialize registers: %d", ret);
+        return ret;
+    }
+
+    // Configure data ready interrupt AFTER successful initialization
+    ret = gpio_pin_interrupt_configure_dt(&config->dr, GPIO_INT_EDGE_TO_ACTIVE);
+    if (ret < 0) {
+        LOG_ERR("Failed to configure data ready interrupt: %d", ret);
         return ret;
     }
 
     // Final test - try to read some data
     ret = iqs5xx_sample_fetch(dev);
     if (ret < 0) {
-        return 0;
-    } else {
-        return 0;
+        LOG_WRN("Initial sample fetch failed: %d (this may be normal)", ret);
+        // Don't fail initialization for this
     }
 
+    LOG_INF("IQS5XX trackpad initialized successfully");
     return 0;
 }
 
 // Device instance data
 static struct iqs5xx_data iqs5xx_data_0 = {
-    .data_ready_handler = NULL
+    .data_ready_handler = NULL,
+    .consecutive_errors = 0,
+    .last_error_time = 0
 };
 
-// Device configuration from devicetree - SAFE VERSION WITH FALLBACK
+// Device configuration from devicetree
 static const struct iqs5xx_config iqs5xx_config_0 = {
     .dr = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), dr_gpios, {}),
     .rotate_90 = DT_INST_PROP(0, rotate_90),
