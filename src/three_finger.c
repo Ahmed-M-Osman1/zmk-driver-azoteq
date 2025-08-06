@@ -28,25 +28,25 @@ static float calculate_average_y(const struct iqs5xx_rawdata *data, int finger_c
     return sum / finger_count;
 }
 
-// FIXED: Proper state cleanup after Mission Control
+// FIXED: Proper state cleanup after Mission Control - CORRECTED HID CONSTANTS
 static void send_control_up(void) {
     // Clear any existing HID state first
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
-    // Press Control
-    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    // Press Control (CORRECTED CONSTANT NAME)
+    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
     if (ret1 < 0) {
         return;
     }
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
-    // Press Up Arrow
-    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_UPARROW);
+    // Press Up Arrow (CORRECTED CONSTANT NAME)
+    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_UP_ARROW);
     if (ret2 < 0) {
-        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
         zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
         return;
     }
@@ -54,12 +54,12 @@ static void send_control_up(void) {
     k_msleep(50); // Hold the combination
 
     // Release Up Arrow
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_UPARROW);
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_UP_ARROW);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
     // Release Control
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(20);
 
@@ -69,25 +69,25 @@ static void send_control_up(void) {
     k_msleep(50); // Give extra time for cleanup
 }
 
-// FIXED: Proper state cleanup after Application Windows
+// FIXED: Proper state cleanup after Application Windows - CORRECTED HID CONSTANTS
 static void send_control_down(void) {
     // Clear any existing HID state first
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
-    // Press Control
-    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    // Press Control (CORRECTED CONSTANT NAME)
+    int ret1 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
     if (ret1 < 0) {
         return;
     }
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
-    // Press Down Arrow
-    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_DOWNARROW);
+    // Press Down Arrow (CORRECTED CONSTANT NAME)
+    int ret2 = zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_DOWN_ARROW);
     if (ret2 < 0) {
-        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+        zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
         zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
         return;
     }
@@ -95,12 +95,12 @@ static void send_control_down(void) {
     k_msleep(50); // Hold the combination
 
     // Release Down Arrow
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_DOWNARROW);
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_DOWN_ARROW);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(10);
 
     // Release Control
-    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    zmk_hid_keyboard_release(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(20);
 

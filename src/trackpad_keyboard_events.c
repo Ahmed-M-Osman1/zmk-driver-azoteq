@@ -14,7 +14,7 @@ int trackpad_keyboard_init(const struct device *input_dev) {
     return 0;
 }
 
-// FIXED: Use proper HID usage codes
+// FIXED: Use correct HID usage codes (note the underscores in the names)
 static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* description, int hold_time) {
     // Clear any existing state - USE HID_USAGE_GD_KEYBOARD
     zmk_hid_keyboard_clear();
@@ -86,8 +86,8 @@ static int send_zoom_combo(uint8_t modifier, uint8_t key, const char* descriptio
 
 // ZOOM IN with multiple fallback methods
 void send_trackpad_zoom_in(void) {
-    // Method 1: Ctrl + Plus (using correct keycodes)
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL, HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS, "Ctrl+Equal(Plus)", 150);
+    // Method 1: Ctrl + Plus (using CORRECT keycodes with underscores)
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL, HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS, "Ctrl+Equal(Plus)", 150);
     k_msleep(100);
 
     // Method 2: Ctrl + Shift + Plus (explicit plus)
@@ -95,10 +95,10 @@ void send_trackpad_zoom_in(void) {
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(50);
 
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL);
+    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(20);
-    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFTSHIFT);
+    zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_LEFT_SHIFT);
     zmk_endpoints_send_report(HID_USAGE_GD_KEYBOARD);
     k_msleep(20);
     zmk_hid_keyboard_press(HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS); // Shift+Equal = Plus
@@ -110,25 +110,25 @@ void send_trackpad_zoom_in(void) {
     k_msleep(100);
 
     // Method 3: Cmd+Plus for Mac compatibility
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTGUI, HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS, "Cmd+Plus(Mac)", 150);
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFT_GUI, HID_USAGE_KEY_KEYBOARD_EQUAL_AND_PLUS, "Cmd+Plus(Mac)", 150);
     k_msleep(100);
 
     // Method 4: Try numeric keypad plus
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL, HID_USAGE_KEY_KEYPAD_PLUS_AND_PLUS, "Ctrl+NumPad_Plus", 150);
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL, HID_USAGE_KEY_KEYPAD_PLUS_AND_PLUS, "Ctrl+NumPad_Plus", 150);
 }
 
 // ZOOM OUT with multiple fallback methods
 void send_trackpad_zoom_out(void) {
     // Method 1: Ctrl + Minus
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE, "Ctrl+Minus", 150);
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE, "Ctrl+Minus", 150);
     k_msleep(100);
 
     // Method 2: Cmd+Minus for Mac
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTGUI, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE, "Cmd+Minus(Mac)", 150);
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFT_GUI, HID_USAGE_KEY_KEYBOARD_MINUS_AND_UNDERSCORE, "Cmd+Minus(Mac)", 150);
     k_msleep(100);
 
     // Method 3: Numeric keypad minus
-    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFTCONTROL, HID_USAGE_KEY_KEYPAD_MINUS_AND_MINUS, "Ctrl+NumPad_Minus", 150);
+    send_zoom_combo(HID_USAGE_KEY_KEYBOARD_LEFT_CONTROL, HID_USAGE_KEY_KEYPAD_MINUS_AND_MINUS, "Ctrl+NumPad_Minus", 150);
 }
 
 // Test functions

@@ -15,7 +15,7 @@
 LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 static struct gesture_state g_gesture_state = {0};
-static const struct device *trackpad;
+// REMOVED: unused trackpad variable that was causing warning
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 static int64_t last_event_time = 0; // For rate-limiting
