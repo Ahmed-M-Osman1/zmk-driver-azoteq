@@ -12,10 +12,9 @@
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
 
-LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
+LOG_MODULE_REGISTER(trackpad, CONFIG_ZMK_LOG_LEVEL);
 
 static struct gesture_state g_gesture_state = {0};
-// REMOVED: unused trackpad variable that was causing warning
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 static int64_t last_event_time = 0; // For rate-limiting
@@ -23,26 +22,26 @@ static int64_t last_event_time = 0; // For rate-limiting
 // Optimized input event sending
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     event_count++;
-    // Log important events
-    if (type == INPUT_EV_KEY) {
-        // Button press/release
-    } else if (abs(value) > 5) { // Only log significant movements
-        // Mouse movement
-    }
+
+    // DEBUG: Log all input events
+    LOG_INF("Input event: type=%d, code=%d, value=%d, sync=%d", type, code, value, sync);
 
     if (trackpad_device) {
         int ret = input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
         if (ret < 0) {
+            LOG_ERR("Failed to send input event: %d", ret);
             return;
         }
+        LOG_DBG("Input event sent successfully");
     } else {
+        LOG_ERR("Trackpad device not initialized!");
         return;
     }
 }
 
-// Initialize gesture state functions (these were missing)
+// Initialize gesture state functions
 void single_finger_init(void) {
-    // Initialize single finger state if needed
+    LOG_INF("Initializing single finger gestures");
     g_gesture_state.isDragging = false;
     g_gesture_state.dragStartSent = false;
     g_gesture_state.accumPos.x = 0;
@@ -50,13 +49,13 @@ void single_finger_init(void) {
 }
 
 void two_finger_init(void) {
-    // Initialize two finger state if needed
+    LOG_INF("Initializing two finger gestures");
     g_gesture_state.twoFingerActive = false;
     g_gesture_state.lastXScrollReport = 0;
 }
 
 void three_finger_init(void) {
-    // Initialize three finger state if needed
+    LOG_INF("Initializing three finger gestures");
     g_gesture_state.threeFingersPressed = false;
     g_gesture_state.gestureTriggered = false;
 }
@@ -72,28 +71,32 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     bool has_gesture = (data->gestures0 != 0) || (data->gestures1 != 0);
     bool finger_count_changed = (g_gesture_state.lastFingerCount != data->finger_count);
 
+    // DEBUG: Log trigger events
+    if (trigger_count % 50 == 1 || has_gesture || finger_count_changed) {  // Reduce log spam
+        LOG_INF("Trigger #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=(%d,%d)",
+                trigger_count, data->finger_count, data->gestures0, data->gestures1,
+                data->rx, data->ry);
+    }
+
     // Rate limit ONLY movement events, NEVER gesture events
     if (!has_gesture && !finger_count_changed && (current_time - last_event_time < 20)) {
         return; // Skip only movement-only events
     }
     last_event_time = current_time;
 
-    // Log when finger count changes or gestures detected
-    if (finger_count_changed || has_gesture) {
-        // TRIGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
-    }
-
     // FIXED: Process gestures FIRST, before finger count logic
     if (has_gesture) {
-        // GESTURE DETECTED: g0=0x%02x, g1=0x%02x ===", data->gestures0, data->gestures1);
+        LOG_INF("=== GESTURE DETECTED: g0=0x%02x, g1=0x%02x ===", data->gestures0, data->gestures1);
 
         // Handle single finger gestures (including taps that happen on finger lift)
         if (data->gestures0) {
+            LOG_INF("Handling single finger gesture: 0x%02x", data->gestures0);
             handle_single_finger_gestures(dev, data, &g_gesture_state);
         }
 
         // Handle two finger gestures
         if (data->gestures1) {
+            LOG_INF("Handling two finger gesture: 0x%02x", data->gestures1);
             handle_two_finger_gestures(dev, data, &g_gesture_state);
         }
     }
@@ -101,6 +104,9 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     // THEN handle finger count changes and movement
     switch (data->finger_count) {
         case 0:
+            if (g_gesture_state.lastFingerCount != 0) {
+                LOG_INF("All fingers lifted - resetting states");
+            }
             // Reset all states when no fingers
             reset_single_finger_state(&g_gesture_state);
             reset_two_finger_state(&g_gesture_state);
@@ -108,6 +114,9 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             break;
 
         case 1:
+            if (g_gesture_state.lastFingerCount != 1) {
+                LOG_INF("Single finger detected");
+            }
             // Only reset others if they were active
             if (g_gesture_state.twoFingerActive) reset_two_finger_state(&g_gesture_state);
             if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
@@ -119,6 +128,9 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             break;
 
         case 2:
+            if (g_gesture_state.lastFingerCount != 2) {
+                LOG_INF("Two fingers detected");
+            }
             // Only reset others if they were active
             if (g_gesture_state.isDragging) reset_single_finger_state(&g_gesture_state);
             if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
@@ -130,6 +142,9 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             break;
 
         case 3:
+            if (g_gesture_state.lastFingerCount != 3) {
+                LOG_INF("Three fingers detected");
+            }
             // Only reset others if they were active
             if (g_gesture_state.isDragging) reset_single_finger_state(&g_gesture_state);
             if (g_gesture_state.twoFingerActive) reset_two_finger_state(&g_gesture_state);
@@ -137,6 +152,9 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             break;
 
         default:
+            if (data->finger_count > 3) {
+                LOG_INF("%d fingers detected - resetting all", data->finger_count);
+            }
             // 4+ fingers - reset all
             reset_single_finger_state(&g_gesture_state);
             reset_two_finger_state(&g_gesture_state);
@@ -151,32 +169,52 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
 }
 
 static int trackpad_init(void) {
+    LOG_INF("=== TRACKPAD INITIALIZATION STARTING ===");
+
     // Get the IQS5XX device - FIXED device tree access
     const struct device *trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
     if (!trackpad) {
+        LOG_ERR("IQS5XX device not found!");
         return -ENODEV;
     }
 
+    LOG_INF("Found IQS5XX device: %s", trackpad->name);
+
+    // Check if device is ready
+    if (!device_is_ready(trackpad)) {
+        LOG_ERR("IQS5XX device not ready!");
+        return -ENODEV;
+    }
+
+    LOG_INF("IQS5XX device is ready");
+
     // Set the global trackpad device reference
     trackpad_device = trackpad;
+    LOG_INF("Global trackpad device reference set");
 
     // Initialize trackpad keyboard events
     int ret = trackpad_keyboard_init(trackpad);
     if (ret < 0) {
+        LOG_ERR("Failed to initialize trackpad keyboard events: %d", ret);
         return ret;
     }
+    LOG_INF("Trackpad keyboard events initialized");
 
     // Initialize gesture state
     single_finger_init();
     two_finger_init();
     three_finger_init();
+    LOG_INF("All gesture states initialized");
 
     // Set the trigger handler
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
     if (err < 0) {
+        LOG_ERR("Failed to set trigger handler: %d", err);
         return err;
     }
+    LOG_INF("Trigger handler set successfully");
 
+    LOG_INF("=== TRACKPAD INITIALIZATION COMPLETED SUCCESSFULLY ===");
     return 0;
 }
 
