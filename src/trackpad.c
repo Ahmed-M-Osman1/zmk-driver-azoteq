@@ -13,6 +13,8 @@
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
 
+LOG_MODULE_REGISTER(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
+
 static struct gesture_state g_gesture_state = {0};
 static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
@@ -32,9 +34,11 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     if (trackpad_device) {
         int ret = input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
         if (ret < 0) {
+            LOG_ERR("Input report failed: %d", ret);
             return;
         }
     } else {
+        LOG_ERR("No trackpad device available");
         return;
     }
 }
@@ -58,12 +62,13 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
 
     // Log when finger count changes or gestures detected
     if (finger_count_changed || has_gesture) {
-        // TRIGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x, rel=%d/%d",
+        LOG_DBG("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x",
+                trigger_count, data->finger_count, data->gestures0, data->gestures1);
     }
 
     // FIXED: Process gestures FIRST, before finger count logic
     if (has_gesture) {
-        // GESTURE DETECTED: g0=0x%02x, g1=0x%02x ===", data->gestures0, data->gestures1);
+        LOG_DBG("GESTURE DETECTED: g0=0x%02x, g1=0x%02x", data->gestures0, data->gestures1);
 
         // Handle single finger gestures (including taps that happen on finger lift)
         if (data->gestures0) {
@@ -142,6 +147,7 @@ static int trackpad_init(void) {
     // Initialize the keyboard events system
     int ret = trackpad_keyboard_init(trackpad_device);
     if (ret < 0) {
+        LOG_ERR("Failed to initialize keyboard events: %d", ret);
         return ret;
     }
 
@@ -151,8 +157,11 @@ static int trackpad_init(void) {
 
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
     if(err) {
+        LOG_ERR("Failed to set trigger handler: %d", err);
         return -EINVAL;
     }
+
+    LOG_INF("Trackpad initialized successfully");
     return 0;
 }
 
