@@ -12,17 +12,26 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
-                // IMMEDIATE SINGLE CLICK - Hardware detected tap, always honor it
-                LOG_DBG("Single tap detected");
-                // If we were dragging, end the drag first
-                if (state->isDragging && state->dragStartSent) {
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, false);
-                    state->isDragging = false;
-                    state->dragStartSent = false;
+                // Handle single tap - be smarter about drag state
+                if (data->finger_count == 0) {
+                    // Finger lift - if we were dragging, this should have been handled by reset_single_finger_state
+                    // If drag state is stale, clear it and process the tap
+                    if (state->isDragging) {
+                        LOG_DBG("Clearing stale drag state before processing tap");
+                        state->isDragging = false;
+                        state->dragStartSent = false;
+                    }
+                    LOG_DBG("Single tap detected (finger lift)");
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                } else if (data->finger_count == 1 && !state->isDragging) {
+                    // Finger down tap - only if not currently dragging
+                    LOG_DBG("Single tap detected (finger down)");
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                } else {
+                    LOG_DBG("Single tap ignored (dragging=%d, fingers=%d)", state->isDragging, data->finger_count);
                 }
-                // Now send the single click
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
                 break;
 
             case GESTURE_TAP_AND_HOLD:

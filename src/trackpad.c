@@ -73,9 +73,17 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     if (has_gesture) {
         LOG_DBG("GESTURE DETECTED: g0=0x%02x, g1=0x%02x", data->gestures0, data->gestures1);
 
-        // Handle single finger gestures (including taps that happen on finger lift)
+        // Handle single finger gestures - but avoid conflicts with multi-finger operations
         if (data->gestures0) {
-            handle_single_finger_gestures(dev, data, &g_gesture_state);
+            // Only process single finger gestures if:
+            // 1. No multi-finger operations are active, OR
+            // 2. This is a finger-lift gesture (finger_count == 0) from a single-finger session
+            bool can_process_single = !g_gesture_state.twoFingerActive && !g_gesture_state.threeFingersPressed;
+            if (can_process_single) {
+                handle_single_finger_gestures(dev, data, &g_gesture_state);
+            } else {
+                LOG_DBG("Single finger gesture blocked due to multi-finger operation");
+            }
         }
 
         // Handle two finger gestures
