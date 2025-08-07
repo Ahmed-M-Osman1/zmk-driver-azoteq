@@ -53,22 +53,22 @@ static void send_control_up(void) {
         return;
     }
     zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_msleep(50); // Hold the combination
+    k_msleep(30); // Reduced hold time
 
     // Release Up Arrow
     zmk_hid_keyboard_release(UP_ARROW);
     zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_msleep(10);
+    k_msleep(5);
 
     // Release Control
     zmk_hid_keyboard_release(LEFT_CONTROL);
     zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_msleep(20);
+    k_msleep(10);
 
     // CRITICAL FIX: Complete cleanup after Mission Control
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_msleep(50); // Give extra time for cleanup
+    k_msleep(30); // Reduced cleanup time
 
     LOG_DBG("Sent Control+Up (Mission Control)");
 }
@@ -98,22 +98,22 @@ static void send_control_down(void) {
         return;
     }
     zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_msleep(50); // Hold the combination
+    k_msleep(30); // Reduced hold time
 
     // Release Down Arrow
     zmk_hid_keyboard_release(DOWN_ARROW);
     zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_msleep(10);
+    k_msleep(5);
 
     // Release Control
     zmk_hid_keyboard_release(LEFT_CONTROL);
     zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_msleep(20);
+    k_msleep(10);
 
     // CRITICAL FIX: Complete cleanup after Application Windows
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(HID_USAGE_KEY);
-    k_msleep(50); // Give extra time for cleanup
+    k_msleep(30); // Reduced cleanup time
 
     LOG_DBG("Sent Control+Down (App Expose)");
 }
@@ -127,7 +127,7 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
     int64_t current_time = k_uptime_get();
 
     // Check global cooldown - block all processing if too recent
-    if (current_time - global_gesture_cooldown < 1000) { // 1 second cooldown
+    if (current_time - global_gesture_cooldown < 500) { // Reduced to 500ms cooldown
         return;
     }
 
@@ -165,8 +165,8 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
 
         LOG_DBG("Three finger Y movement: %.1f", yMovement);
 
-        // Detect significant movement (50px threshold for better reliability)
-        if (fabsf(yMovement) > 50.0f) {
+        // Detect significant movement (reduced threshold for better responsiveness)
+        if (fabsf(yMovement) > 30.0f) {
             if (yMovement > 0) {
                 // SWIPE DOWN = Application Windows (App Exposé)
                 LOG_INF("Three finger swipe down detected - App Expose");
@@ -182,11 +182,7 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
             global_gesture_cooldown = current_time;
             state->threeFingersPressed = false;
 
-            // ADDITIONAL CLEANUP: Reset ALL gesture states to prevent contamination
-            state->isDragging = false;
-            state->dragStartSent = false;
-            state->twoFingerActive = false;
-            state->lastXScrollReport = 0;
+            // Only reset three finger state to avoid interfering with other gestures
             return;
         }
     }

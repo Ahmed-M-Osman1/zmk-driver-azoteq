@@ -12,25 +12,19 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
-                // Handle single tap - be smarter about drag state
-                if (data->finger_count == 0) {
-                    // Finger lift - if we were dragging, this should have been handled by reset_single_finger_state
-                    // If drag state is stale, clear it and process the tap
-                    if (state->isDragging) {
-                        LOG_DBG("Clearing stale drag state before processing tap");
-                        state->isDragging = false;
-                        state->dragStartSent = false;
-                    }
-                    LOG_DBG("Single tap detected (finger lift)");
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
-                } else if (data->finger_count == 1 && !state->isDragging) {
-                    // Finger down tap - only if not currently dragging
-                    LOG_DBG("Single tap detected (finger down)");
+                // IMMEDIATE SINGLE CLICK - check for stale drag state first
+                if (state->isDragging && !state->dragStartSent) {
+                    // Stale drag state, clear it
+                    LOG_DBG("Clearing stale drag state");
+                    state->isDragging = false;
+                }
+
+                if (!state->isDragging) {
+                    LOG_DBG("Single tap detected");
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
                 } else {
-                    LOG_DBG("Single tap ignored (dragging=%d, fingers=%d)", state->isDragging, data->finger_count);
+                    LOG_DBG("Single tap blocked - currently dragging");
                 }
                 break;
 
@@ -41,8 +35,14 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
                     state->isDragging = true;
                     state->dragStartSent = true;
+                } else if (state->isDragging && !state->dragStartSent) {
+                    // Drag state exists but button wasn't sent - fix it
+                    LOG_DBG("Fixing drag state - sending missing button press");
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    state->dragStartSent = true;
                 } else {
-                    // Already dragging, don't send more button presses
+                    // Already dragging properly, don't send more button presses
+                    LOG_DBG("Drag already active");
                 }
                 break;
 

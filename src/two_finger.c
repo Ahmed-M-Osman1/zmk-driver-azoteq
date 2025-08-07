@@ -325,12 +325,21 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
 void reset_two_finger_state(struct gesture_state *state) {
     if (two_finger_state.active) {
-        // SIMPLIFIED: Only handle fallback tap if no other gesture was performed AND it was quick
+        // Only handle fallback tap if:
+        // 1. No other gesture was performed 
+        // 2. It was quick enough
+        // 3. No significant scroll accumulation occurred
+        bool no_significant_scroll = (fabsf(two_finger_state.scroll_accumulator_x) < 10.0f && 
+                                      fabsf(two_finger_state.scroll_accumulator_y) < 10.0f);
+        
         if (!two_finger_state.gesture_locked &&
-            k_uptime_get() - two_finger_state.start_time < TAP_MAX_TIME_MS) {
+            k_uptime_get() - two_finger_state.start_time < TAP_MAX_TIME_MS &&
+            no_significant_scroll) {
             LOG_DBG("Two finger fallback tap");
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
+        } else if (!no_significant_scroll) {
+            LOG_DBG("Scroll detected - no fallback tap");
         }
 
         // Clear enhanced state
