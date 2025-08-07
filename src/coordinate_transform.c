@@ -1,8 +1,6 @@
 #include <zephyr/kernel.h>
-#include <zephyr/logging/log.h>
 #include "iqs5xx.h"
 
-LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 // Apply coordinate transformations based on configuration
 struct coord_transform apply_coordinate_transform(int16_t x, int16_t y, const struct iqs5xx_config *config) {
@@ -18,7 +16,6 @@ struct coord_transform apply_coordinate_transform(int16_t x, int16_t y, const st
         // 180°: (x,y) -> (-x,-y)
         result.x = -result.x;
         result.y = -result.y;
-        LOG_DBG("Applied 180° rotation: (%d,%d) -> (%d,%d)", x, y, result.x, result.y);
     } else if (config->rotate_270) {
         // 270° clockwise: (x,y) -> (-y,x)
         int16_t temp = result.x;

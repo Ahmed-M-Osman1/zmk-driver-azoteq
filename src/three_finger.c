@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <dt-bindings/zmk/keys.h>
@@ -14,7 +13,6 @@
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
 
-LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 // Global cooldown to prevent gesture re-triggering
 static int64_t global_gesture_cooldown = 0;
@@ -38,7 +36,6 @@ static void send_control_up(void) {
     // Press Control
     int ret1 = zmk_hid_keyboard_press(LEFT_CONTROL);
     if (ret1 < 0) {
-        LOG_ERR("Failed to press LCTRL: %d", ret1);
         return;
     }
     zmk_endpoints_send_report(HID_USAGE_KEY);
@@ -47,7 +44,6 @@ static void send_control_up(void) {
     // Press Up Arrow
     int ret2 = zmk_hid_keyboard_press(UP_ARROW);
     if (ret2 < 0) {
-        LOG_ERR("Failed to press UP_ARROW: %d", ret2);
         zmk_hid_keyboard_release(LEFT_CONTROL);
         zmk_endpoints_send_report(HID_USAGE_KEY);
         return;
@@ -69,8 +65,6 @@ static void send_control_up(void) {
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(30); // Reduced cleanup time
-
-    LOG_DBG("Sent Control+Up (Mission Control)");
 }
 
 // FIXED: Proper state cleanup after Application Windows
@@ -83,7 +77,6 @@ static void send_control_down(void) {
     // Press Control
     int ret1 = zmk_hid_keyboard_press(LEFT_CONTROL);
     if (ret1 < 0) {
-        LOG_ERR("Failed to press LCTRL: %d", ret1);
         return;
     }
     zmk_endpoints_send_report(HID_USAGE_KEY);
@@ -92,7 +85,6 @@ static void send_control_down(void) {
     // Press Down Arrow
     int ret2 = zmk_hid_keyboard_press(DOWN_ARROW);
     if (ret2 < 0) {
-        LOG_ERR("Failed to press DOWN_ARROW: %d", ret2);
         zmk_hid_keyboard_release(LEFT_CONTROL);
         zmk_endpoints_send_report(HID_USAGE_KEY);
         return;
@@ -114,8 +106,6 @@ static void send_control_down(void) {
     zmk_hid_keyboard_clear();
     zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(30); // Reduced cleanup time
-
-    LOG_DBG("Sent Control+Down (App Expose)");
 }
 
 void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
@@ -142,7 +132,6 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
             state->threeFingerStartPos[i].x = data->fingers[i].ax;
             state->threeFingerStartPos[i].y = data->fingers[i].ay;
         }
-        LOG_DBG("Three finger gesture started");
         return;
     }
 
@@ -163,17 +152,13 @@ void handle_three_finger_gestures(const struct device *dev, const struct iqs5xx_
         float currentAvgY = calculate_average_y(data, 3);
         float yMovement = currentAvgY - initialAvgY;
 
-        LOG_DBG("Three finger Y movement: %.1f", yMovement);
-
         // Detect significant movement (reduced threshold for better responsiveness)
         if (fabsf(yMovement) > 30.0f) {
             if (yMovement > 0) {
                 // SWIPE DOWN = Application Windows (App Exposé)
-                LOG_INF("Three finger swipe down detected - App Expose");
                 send_control_down();
             } else {
                 // SWIPE UP = Mission Control
-                LOG_INF("Three finger swipe up detected - Mission Control");
                 send_control_up();
             }
 
@@ -195,7 +180,6 @@ void reset_three_finger_state(struct gesture_state *state) {
 
         // Check if we're in gesture cooldown
         if (k_uptime_get() - global_gesture_cooldown > 500) {
-            LOG_DBG("Three finger tap detected");
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 1, false);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_2, 0, true);
         }
@@ -204,6 +188,5 @@ void reset_three_finger_state(struct gesture_state *state) {
     if (state->threeFingersPressed) {
         state->threeFingersPressed = false;
         state->gestureTriggered = false;
-        LOG_DBG("Three finger gesture reset");
     }
 }
