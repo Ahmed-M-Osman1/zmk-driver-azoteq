@@ -12,12 +12,17 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
-                // IMMEDIATE SINGLE CLICK - only if not already dragging (like working code)
-                if (!state->isDragging) {
-                    LOG_DBG("Single tap detected");
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
+                // IMMEDIATE SINGLE CLICK - Hardware detected tap, always honor it
+                LOG_DBG("Single tap detected");
+                // If we were dragging, end the drag first
+                if (state->isDragging && state->dragStartSent) {
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, false);
+                    state->isDragging = false;
+                    state->dragStartSent = false;
                 }
+                // Now send the single click
+                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
                 break;
 
             case GESTURE_TAP_AND_HOLD:

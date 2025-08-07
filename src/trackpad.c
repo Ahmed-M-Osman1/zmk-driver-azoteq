@@ -58,7 +58,10 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     if (!has_gesture && !finger_count_changed && (current_time - last_event_time < 20)) {
         return; // Skip only movement-only events
     }
-    last_event_time = current_time;
+    // Only update last_event_time for non-gesture events to avoid blocking subsequent gestures
+    if (!has_gesture) {
+        last_event_time = current_time;
+    }
 
     // Log when finger count changes or gestures detected
     if (finger_count_changed || has_gesture) {
@@ -79,12 +82,16 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
         if (data->gestures1) {
             handle_two_finger_gestures(dev, data, &g_gesture_state);
         }
+        
+        // After processing gestures, don't immediately reset states to avoid conflicts
+        // State resets will happen in the finger count logic below if needed
     }
 
     // THEN handle finger count changes and movement
     switch (data->finger_count) {
         case 0:
-            // Reset all states when no fingers
+            // Reset all states when no fingers detected
+            // This should happen AFTER gestures are processed to avoid conflicts
             reset_single_finger_state(&g_gesture_state);
             reset_two_finger_state(&g_gesture_state);
             reset_three_finger_state(&g_gesture_state);
@@ -95,7 +102,8 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             if (g_gesture_state.twoFingerActive) reset_two_finger_state(&g_gesture_state);
             if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
 
-            // Handle single finger movement (but gestures were already handled above)
+            // Handle single finger movement (but skip if gesture was already handled above)
+            // This prevents double-processing of gestures
             if (!has_gesture) {
                 handle_single_finger_gestures(dev, data, &g_gesture_state);
             }
