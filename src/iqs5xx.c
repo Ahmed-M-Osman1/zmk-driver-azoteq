@@ -30,7 +30,7 @@ struct iqs5xx_reg_config iqs5xx_reg_config_default () {
         regconf.tapDistance =               15;   // Reduced for more sensitive taps
         regconf.touchMultiplier =           0;
         regconf.debounce =                  0;
-        regconf.i2cTimeout =                2;    // Reduced timeout
+        regconf.i2cTimeout =                10;   // Increased for better reliability
         regconf.filterSettings =            MAV_FILTER | IIR_FILTER;
         regconf.filterDynBottomBeta =        15;  // Reduced for less filtering
         regconf.filterDynLowerSpeed =        10;  // Reduced for faster response

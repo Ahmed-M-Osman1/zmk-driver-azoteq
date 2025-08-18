@@ -18,10 +18,24 @@ static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 static int64_t last_event_time = 0; // For rate-limiting
+static int64_t last_activity_time = 0; // For idle detection
+static bool is_idle_mode = false;
 
 // Optimized input event sending
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     event_count++;
+    
+    // Reset event counter periodically to prevent overflow
+    if (event_count > 1000000) {
+        event_count = 0;
+    }
+    
+    // Update activity time for any significant event
+    if (type == INPUT_EV_KEY || abs(value) > 2) {
+        last_activity_time = k_uptime_get();
+        is_idle_mode = false;
+    }
+    
     // Log important events
     if (type == INPUT_EV_KEY) {
         // Button press/release
@@ -49,6 +63,24 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     // CRITICAL: ALWAYS process gestures immediately, regardless of finger count
     bool has_gesture = (data->gestures0 != 0) || (data->gestures1 != 0);
     bool finger_count_changed = (g_gesture_state.lastFingerCount != data->finger_count);
+    bool has_activity = has_gesture || finger_count_changed || (data->finger_count > 0);
+
+    // Check for idle state transition (5 seconds of inactivity)
+    if (!has_activity && !is_idle_mode && (current_time - last_activity_time > 5000)) {
+        is_idle_mode = true;
+        // Could add device power state change here if supported
+    }
+    
+    // If we have activity and were idle, wake up
+    if (has_activity && is_idle_mode) {
+        is_idle_mode = false;
+        last_activity_time = current_time;
+    }
+    
+    // In idle mode, reduce processing frequency significantly
+    if (is_idle_mode && (current_time - last_event_time < 100)) {
+        return; // Skip processing in idle mode unless 100ms passed
+    }
 
     // Rate limit ONLY movement events, NEVER gesture events
     if (!has_gesture && !finger_count_changed && (current_time - last_event_time < 20)) {
@@ -156,6 +188,10 @@ static int trackpad_init(void) {
     // Initialize gesture state with devicetree sensitivity
     memset(&g_gesture_state, 0, sizeof(g_gesture_state));
     g_gesture_state.mouseSensitivity = config->sensitivity;
+    
+    // Initialize activity tracking
+    last_activity_time = k_uptime_get();
+    is_idle_mode = false;
 
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
     if(err) {
