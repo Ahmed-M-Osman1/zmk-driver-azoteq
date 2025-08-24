@@ -21,6 +21,18 @@ static int64_t last_event_time = 0; // For rate-limiting
 static int64_t last_activity_time = 0; // For idle detection
 static bool is_idle_mode = false;
 
+// Edge continuation work queue
+static void edge_continuation_work_handler(struct k_work *work);
+K_WORK_DELAYABLE_DEFINE(edge_continuation_work, edge_continuation_work_handler);
+
+static void edge_continuation_work_handler(struct k_work *work) {
+    if (g_gesture_state.edgeContinuationActive) {
+        update_edge_continuation(&g_gesture_state);
+        // Schedule next update
+        k_work_reschedule(&edge_continuation_work, K_MSEC(CONTINUATION_UPDATE_INTERVAL_MS));
+    }
+}
+
 // Optimized input event sending
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     event_count++;

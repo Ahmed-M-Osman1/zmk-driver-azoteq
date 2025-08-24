@@ -36,6 +36,15 @@ struct gesture_state {
     } threeFingerStartPos[3];
     bool gestureTriggered;
 
+    // Edge continuation state
+    bool edgeContinuationActive;
+    int64_t edgeContinuationStartTime;
+    struct {
+        float x;
+        float y;
+    } lastMovementDirection;
+    float continuationVelocity;
+
     // General state
     uint8_t lastFingerCount;
     uint8_t mouseSensitivity;
@@ -49,11 +58,20 @@ struct gesture_state {
 #define ZOOM_THRESHOLD                      80
 #define ZOOM_SENSITIVITY                    40
 
+// Edge continuation constants  
+#define TRACKPAD_MAX_X                      1530  // Typical trackpad X resolution
+#define TRACKPAD_MAX_Y                      1018  // Typical trackpad Y resolution  
+#define EDGE_THRESHOLD                      50    // Pixels from edge to trigger continuation
+#define CONTINUATION_DURATION_MS            500   // How long to continue movement
+#define CONTINUATION_DECAY_FACTOR           0.95f // Velocity decay per update
+#define CONTINUATION_UPDATE_INTERVAL_MS     16    // Update every 16ms (~60fps)
+
 // Function declarations for each gesture handler file
 
 // single_finger.c
 void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state);
 void reset_single_finger_state(struct gesture_state *state);
+void update_edge_continuation(struct gesture_state *state);
 
 // two_finger.c
 void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state);
