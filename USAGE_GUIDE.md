@@ -24,18 +24,23 @@ This guide explains how to use all the gesture features available in the ZMK Azo
 
 ### Mac-Style Drag and Drop (NEW!)
 
-#### How to Use Mac-Style Drag Lock:
-1. **Start Drag Lock**: 
-   - Tap and hold one finger firmly on the trackpad
-   - Keep it still for about 0.3 seconds
-   - You'll feel the drag lock activate (mouse button pressed)
+#### How to Use Mac-Style Drag Lock (Simplified):
+1. **Start Normal Drag**: 
+   - Tap and hold one finger on the trackpad
+   - Start dragging immediately (no waiting required)
+   - This works like normal drag-and-drop
 
-2. **Continue Dragging**: 
-   - While keeping the first finger pressed down, use a second finger to move the cursor
-   - The first finger stays locked in place
-   - Move the second finger to drag the item to where you want
+2. **Activate Drag Lock**: 
+   - While dragging, place a second finger on the trackpad
+   - The first finger automatically becomes "locked" in drag mode
+   - The second finger now controls the cursor movement
 
-3. **Drop**: 
+3. **Continue Dragging**: 
+   - The first finger stays pressed and locked in place
+   - Move the second finger to continue dragging the item
+   - Much more comfortable for long-distance drags
+
+4. **Drop**: 
    - Lift the first finger to release the mouse button and drop the item
    - The second finger can be lifted before or after
 

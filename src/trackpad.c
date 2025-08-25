@@ -138,9 +138,20 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             break;
 
         case 2:
-            // Check if this is drag lock mode (first finger locked, second finger for movement)
-            if (g_gesture_state.dragLockActive && g_gesture_state.dragLockButtonSent) {
-                // Handle drag lock with two fingers - don't reset single finger state
+            // Check if we should convert single-finger drag to drag lock
+            if (g_gesture_state.isDragging && g_gesture_state.dragStartSent && !g_gesture_state.dragLockActive) {
+                // User was dragging with one finger and added a second finger
+                // Convert to drag lock mode
+                g_gesture_state.dragLockActive = true;
+                g_gesture_state.dragLockButtonSent = true; // Button already pressed
+                g_gesture_state.dragLockStartTime = k_uptime_get();
+                g_gesture_state.dragLockStartX = data->fingers[0].ax;
+                g_gesture_state.dragLockStartY = data->fingers[0].ay;
+                g_gesture_state.secondFingerMoving = false;
+                g_gesture_state.dragLockFingerID = 0;
+                handle_drag_lock_gestures(dev, data, &g_gesture_state);
+            } else if (g_gesture_state.dragLockActive && g_gesture_state.dragLockButtonSent) {
+                // Already in drag lock mode
                 handle_drag_lock_gestures(dev, data, &g_gesture_state);
             } else {
                 // Normal two finger gestures

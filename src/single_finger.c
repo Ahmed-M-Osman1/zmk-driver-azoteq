@@ -17,30 +17,26 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
     if (data->gestures0) {
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
-                // Only process tap if not in drag lock mode
-                if (!state->dragLockActive) {
-                    // Clean up any stale drag state
-                    if (state->isDragging && !state->dragStartSent) {
-                        state->isDragging = false;
-                    }
-                    
-                    if (!state->isDragging) {
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
-                    }
+                // Always process single tap normally
+                // Clean up any stale drag state
+                if (state->isDragging && !state->dragStartSent) {
+                    state->isDragging = false;
+                }
+                
+                // Only process tap if not already dragging
+                if (!state->isDragging && !state->dragLockActive) {
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
                 }
                 break;
 
             case GESTURE_TAP_AND_HOLD:
-                // Initialize drag lock on tap and hold
-                if (!state->dragLockActive && !state->isDragging && data->finger_count == 1) {
-                    state->dragLockActive = true;
-                    state->dragLockStartTime = current_time;
-                    state->dragLockStartX = data->fingers[0].ax;
-                    state->dragLockStartY = data->fingers[0].ay;
-                    state->dragLockButtonSent = false;
-                    state->secondFingerMoving = false;
-                    state->dragLockFingerID = 0; // Assume first finger for single finger gestures
+                // Always start with normal drag - drag lock only activates with two fingers
+                if (!state->isDragging) {
+                    // Start normal drag immediately
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    state->isDragging = true;
+                    state->dragStartSent = true;
                 }
                 break;
 
@@ -49,43 +45,13 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
         }
     }
 
-    // Handle single finger movement (cursor movement or drag lock monitoring)
+    // Handle single finger movement (cursor movement and normal dragging)
     if (data->finger_count == 1) {
         float sensMp = (float)state->mouseSensitivity / 128.0F;
         
-        // If drag lock is active, monitor for the hold time
-        if (state->dragLockActive && !state->dragLockButtonSent) {
-            int64_t hold_time = current_time - state->dragLockStartTime;
-            float movement_distance = calculate_distance_2d(
-                state->dragLockStartX, state->dragLockStartY,
-                data->fingers[0].ax, data->fingers[0].ay
-            );
-            
-            // Check if finger moved too much during hold period
-            if (movement_distance > DRAG_LOCK_MAX_MOVEMENT_PX) {
-                // Too much movement, cancel drag lock and do normal drag
-                state->dragLockActive = false;
-                if (!state->isDragging) {
-                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                    state->isDragging = true;
-                    state->dragStartSent = true;
-                }
-            } else if (hold_time >= DRAG_LOCK_HOLD_TIME_MS) {
-                // Hold time reached, activate drag lock
-                send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
-                state->dragLockButtonSent = true;
-            }
-        }
-        
-        // Handle movement
+        // Handle movement - always process single finger movement when there's only one finger
         if (data->rx != 0 || data->ry != 0) {
-            // If in drag lock mode and button was sent, don't move cursor with first finger
-            if (state->dragLockActive && state->dragLockButtonSent) {
-                // First finger is locked, don't process its movement
-                return;
-            }
-            
-            // Normal cursor movement
+            // Normal cursor movement or dragging
             state->accumPos.x += data->rx * sensMp;
             state->accumPos.y += data->ry * sensMp;
 
@@ -155,12 +121,7 @@ void handle_drag_lock_gestures(const struct device *dev, const struct iqs5xx_raw
 }
 
 void reset_drag_lock_state(struct gesture_state *state) {
-    // Release button if drag lock was active
-    if (state->dragLockActive && state->dragLockButtonSent) {
-        send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
-    }
-    
-    // Clear all drag lock state
+    // Clear all drag lock state (button release handled by caller)
     state->dragLockActive = false;
     state->dragLockButtonSent = false;
     state->secondFingerMoving = false;
@@ -173,12 +134,14 @@ void reset_drag_lock_state(struct gesture_state *state) {
 }
 
 void reset_single_finger_state(struct gesture_state *state) {
-    // Handle regular drag release
-    if (state->isDragging && state->dragStartSent) {
+    // Handle drag release (both normal drag and drag lock use the same button)
+    if ((state->isDragging && state->dragStartSent) || (state->dragLockActive && state->dragLockButtonSent)) {
         send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
-        state->isDragging = false;
-        state->dragStartSent = false;
     }
+    
+    // Reset all drag-related state
+    state->isDragging = false;
+    state->dragStartSent = false;
     
     // Reset drag lock state
     reset_drag_lock_state(state);

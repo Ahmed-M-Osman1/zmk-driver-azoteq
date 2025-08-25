@@ -11,18 +11,22 @@ This mimics the behavior of macOS trackpads and provides a more comfortable drag
 
 ## How It Works
 
-### User Experience
-1. **Initiate Drag Lock**: 
-   - Tap and hold one finger on the trackpad for 300ms without moving it significantly
-   - The system enters "drag lock" mode and sends a mouse button press event
-   - The first finger is now "locked" in drag mode
+### User Experience (Updated Simplified Approach)
+1. **Start Normal Drag**: 
+   - Tap and hold one finger on the trackpad to start a normal drag operation
+   - The system immediately sends a mouse button press event and you can drag normally
 
-2. **Continue Dragging**:
-   - While keeping the first finger pressed, use a second finger to move the cursor
-   - The first finger stays in place (locked) while the second finger provides movement
-   - All cursor movement comes from the second finger
+2. **Activate Drag Lock Mode**:
+   - While dragging with the first finger, place a second finger on the trackpad  
+   - The system automatically converts to "drag lock" mode
+   - The first finger becomes "locked" in place, the second finger now controls movement
 
-3. **End Drag**:
+3. **Continue Dragging**:
+   - The first finger stays pressed and locked in place
+   - Use the second finger to continue moving the cursor/dragged item
+   - All cursor movement now comes from the second finger
+
+4. **End Drag**:
    - Lift the first finger to release the mouse button and exit drag lock mode
    - The dragged item is dropped at the current cursor position
 
