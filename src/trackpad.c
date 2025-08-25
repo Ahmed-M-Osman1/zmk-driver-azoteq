@@ -138,13 +138,19 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             break;
 
         case 2:
-            // Only reset others if they were active
-            if (g_gesture_state.isDragging) reset_single_finger_state(&g_gesture_state);
-            if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
+            // Check if this is drag lock mode (first finger locked, second finger for movement)
+            if (g_gesture_state.dragLockActive && g_gesture_state.dragLockButtonSent) {
+                // Handle drag lock with two fingers - don't reset single finger state
+                handle_drag_lock_gestures(dev, data, &g_gesture_state);
+            } else {
+                // Normal two finger gestures
+                if (g_gesture_state.isDragging) reset_single_finger_state(&g_gesture_state);
+                if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
 
-            // Handle two finger gestures (but hardware gestures were already handled above)
-            if (!has_gesture) {
-                handle_two_finger_gestures(dev, data, &g_gesture_state);
+                // Handle two finger gestures (but hardware gestures were already handled above)
+                if (!has_gesture) {
+                    handle_two_finger_gestures(dev, data, &g_gesture_state);
+                }
             }
             break;
 
