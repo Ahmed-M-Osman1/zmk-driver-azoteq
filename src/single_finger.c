@@ -1,10 +1,8 @@
-#include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <math.h>
 #include "gesture_handlers.h"
 
-LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx_rawdata *data, struct gesture_state *state) {
     // IMMEDIATE GESTURE HANDLING - following the working code pattern
@@ -12,9 +10,13 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 
         switch(data->gestures0) {
             case GESTURE_SINGLE_TAP:
-                // IMMEDIATE SINGLE CLICK - only if not already dragging (like working code)
+                // IMMEDIATE SINGLE CLICK - check for stale drag state first
+                if (state->isDragging && !state->dragStartSent) {
+                    // Stale drag state, clear it
+                    state->isDragging = false;
+                }
+
                 if (!state->isDragging) {
-                    LOG_DBG("Single tap detected");
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
                 }
@@ -23,12 +25,13 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
             case GESTURE_TAP_AND_HOLD:
                 // IMMEDIATE drag start - only send button press ONCE (like working code)
                 if (!state->isDragging) {
-                    LOG_DBG("Tap and hold detected - starting drag");
                     send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
                     state->isDragging = true;
                     state->dragStartSent = true;
-                } else {
-                    // Already dragging, don't send more button presses
+                } else if (state->isDragging && !state->dragStartSent) {
+                    // Drag state exists but button wasn't sent - fix it
+                    send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 1, true);
+                    state->dragStartSent = true;
                 }
                 break;
 
@@ -68,7 +71,6 @@ void handle_single_finger_gestures(const struct device *dev, const struct iqs5xx
 void reset_single_finger_state(struct gesture_state *state) {
     // IMMEDIATE drag release when fingers are lifted (like working code)
     if (state->isDragging && state->dragStartSent) {
-        LOG_DBG("Ending drag");
         send_input_event(INPUT_EV_KEY, INPUT_BTN_0, 0, true);
         state->isDragging = false;
         state->dragStartSent = false;

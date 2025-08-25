@@ -1,4 +1,3 @@
-#include <zephyr/logging/log.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <math.h>
@@ -6,7 +5,6 @@
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
 
-LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 // Gesture type enumeration
 typedef enum {
@@ -66,7 +64,6 @@ static float calculate_distance(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t 
 
 // IMMEDIATE two-finger tap detection from hardware gesture
 static void handle_hardware_two_finger_tap(void) {
-    LOG_DBG("Two finger tap detected");
     send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
     send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
 }
@@ -153,10 +150,8 @@ static void handle_zoom_gesture(const struct iqs5xx_rawdata *data) {
     // Send zoom command if stable enough
     if (two_finger_state.stable_readings >= 1 || fabsf(distance_change) > ZOOM_THRESHOLD_PX * 2) {
         if (distance_change > 0) {
-            LOG_INF("Zoom in gesture detected");
             send_trackpad_zoom_in();
         } else {
-            LOG_INF("Zoom out gesture detected");
             send_trackpad_zoom_out();
         }
         two_finger_state.zoom_command_sent = true;
@@ -192,7 +187,6 @@ static void handle_scroll_gesture(const struct iqs5xx_rawdata *data) {
 
             send_input_event(INPUT_EV_REL, INPUT_REL_HWHEEL, -scroll_x, true);
             two_finger_state.last_scroll_time = current_time;
-            LOG_DBG("Horizontal scroll: %d", scroll_x);
         }
     } else if (two_finger_state.gesture_type == TWO_FINGER_VERTICAL_SCROLL) {
         if (fabsf(two_finger_state.scroll_accumulator_y) >= SCROLL_REPORT_DISTANCE) {
@@ -201,7 +195,6 @@ static void handle_scroll_gesture(const struct iqs5xx_rawdata *data) {
 
             send_input_event(INPUT_EV_REL, INPUT_REL_WHEEL, -scroll_y, true);
             two_finger_state.last_scroll_time = current_time;
-            LOG_DBG("Vertical scroll: %d", scroll_y);
         }
     }
 
@@ -232,10 +225,6 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
             data->fingers[1].ax, data->fingers[1].ay
         );
 
-        // If fingers are very close (likely a tap), reduce detection time
-        if (initial_distance < 150.0f) {
-            LOG_DBG("Close finger positioning detected for potential tap");
-        }
     }
 
     // Ensure we have two valid finger readings
@@ -286,7 +275,6 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         state->twoFingerStartPos[1].x = data->fingers[1].ax;
         state->twoFingerStartPos[1].y = data->fingers[1].ay;
 
-        LOG_DBG("Two finger session started");
         return;
     }
 
@@ -302,7 +290,6 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
         two_finger_state.gesture_type = detect_gesture_type(data);
         if (two_finger_state.gesture_type != TWO_FINGER_NONE) {
             two_finger_state.gesture_locked = true;
-            LOG_DBG("Gesture type locked: %d", two_finger_state.gesture_type);
         }
     }
 
@@ -325,10 +312,16 @@ void handle_two_finger_gestures(const struct device *dev, const struct iqs5xx_ra
 
 void reset_two_finger_state(struct gesture_state *state) {
     if (two_finger_state.active) {
-        // SIMPLIFIED: Only handle fallback tap if no other gesture was performed AND it was quick
+        // Only handle fallback tap if:
+        // 1. No other gesture was performed 
+        // 2. It was quick enough
+        // 3. No significant scroll accumulation occurred
+        bool no_significant_scroll = (fabsf(two_finger_state.scroll_accumulator_x) < 10.0f && 
+                                      fabsf(two_finger_state.scroll_accumulator_y) < 10.0f);
+        
         if (!two_finger_state.gesture_locked &&
-            k_uptime_get() - two_finger_state.start_time < TAP_MAX_TIME_MS) {
-            LOG_DBG("Two finger fallback tap");
+            k_uptime_get() - two_finger_state.start_time < TAP_MAX_TIME_MS &&
+            no_significant_scroll) {
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 1, true);
             send_input_event(INPUT_EV_KEY, INPUT_BTN_1, 0, true);
         }
@@ -339,7 +332,5 @@ void reset_two_finger_state(struct gesture_state *state) {
         // Clear legacy state
         state->twoFingerActive = false;
         state->lastXScrollReport = 0;
-
-        LOG_DBG("Two finger state reset");
     }
 }

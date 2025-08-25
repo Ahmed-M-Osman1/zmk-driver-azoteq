@@ -2,7 +2,6 @@
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/sensor.h>
-#include <zephyr/logging/log.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/input/input.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -13,17 +12,30 @@
 #include "gesture_handlers.h"
 #include "trackpad_keyboard_events.h"
 
-LOG_MODULE_DECLARE(azoteq_iqs5xx, CONFIG_ZMK_LOG_LEVEL);
 
 static struct gesture_state g_gesture_state = {0};
 static const struct device *trackpad;
 static const struct device *trackpad_device = NULL;
 static int event_count = 0;
 static int64_t last_event_time = 0; // For rate-limiting
+static int64_t last_activity_time = 0; // For idle detection
+static bool is_idle_mode = false;
 
 // Optimized input event sending
 void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     event_count++;
+    
+    // Reset event counter periodically to prevent overflow
+    if (event_count > 1000000) {
+        event_count = 0;
+    }
+    
+    // Update activity time for any significant event
+    if (type == INPUT_EV_KEY || abs(value) > 2) {
+        last_activity_time = k_uptime_get();
+        is_idle_mode = false;
+    }
+    
     // Log important events
     if (type == INPUT_EV_KEY) {
         // Button press/release
@@ -34,11 +46,9 @@ void send_input_event(uint8_t type, uint16_t code, int32_t value, bool sync) {
     if (trackpad_device) {
         int ret = input_report(trackpad_device, type, code, value, sync, K_NO_WAIT);
         if (ret < 0) {
-            LOG_ERR("Input report failed: %d", ret);
             return;
         }
     } else {
-        LOG_ERR("No trackpad device available");
         return;
     }
 }
@@ -53,38 +63,63 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
     // CRITICAL: ALWAYS process gestures immediately, regardless of finger count
     bool has_gesture = (data->gestures0 != 0) || (data->gestures1 != 0);
     bool finger_count_changed = (g_gesture_state.lastFingerCount != data->finger_count);
+    bool has_activity = has_gesture || finger_count_changed || (data->finger_count > 0);
+
+    // Check for idle state transition (5 seconds of inactivity)
+    if (!has_activity && !is_idle_mode && (current_time - last_activity_time > 5000)) {
+        is_idle_mode = true;
+        // Could add device power state change here if supported
+    }
+    
+    // If we have activity and were idle, wake up
+    if (has_activity && is_idle_mode) {
+        is_idle_mode = false;
+        last_activity_time = current_time;
+    }
+    
+    // In idle mode, reduce processing frequency significantly
+    if (is_idle_mode && (current_time - last_event_time < 100)) {
+        return; // Skip processing in idle mode unless 100ms passed
+    }
 
     // Rate limit ONLY movement events, NEVER gesture events
     if (!has_gesture && !finger_count_changed && (current_time - last_event_time < 20)) {
         return; // Skip only movement-only events
     }
-    last_event_time = current_time;
-
-    // Log when finger count changes or gestures detected
-    if (finger_count_changed || has_gesture) {
-        LOG_DBG("TRIGGER #%d: fingers=%d, g0=0x%02x, g1=0x%02x",
-                trigger_count, data->finger_count, data->gestures0, data->gestures1);
+    // Only update last_event_time for non-gesture events to avoid blocking subsequent gestures
+    if (!has_gesture) {
+        last_event_time = current_time;
     }
+
 
     // FIXED: Process gestures FIRST, before finger count logic
     if (has_gesture) {
-        LOG_DBG("GESTURE DETECTED: g0=0x%02x, g1=0x%02x", data->gestures0, data->gestures1);
 
-        // Handle single finger gestures (including taps that happen on finger lift)
+        // Handle single finger gestures - but avoid conflicts with multi-finger operations
         if (data->gestures0) {
-            handle_single_finger_gestures(dev, data, &g_gesture_state);
+            // Only process single finger gestures if:
+            // 1. No multi-finger operations are active, OR
+            // 2. This is a finger-lift gesture (finger_count == 0) from a single-finger session
+            bool can_process_single = !g_gesture_state.twoFingerActive && !g_gesture_state.threeFingersPressed;
+            if (can_process_single) {
+                handle_single_finger_gestures(dev, data, &g_gesture_state);
+            }
         }
 
         // Handle two finger gestures
         if (data->gestures1) {
             handle_two_finger_gestures(dev, data, &g_gesture_state);
         }
+        
+        // After processing gestures, don't immediately reset states to avoid conflicts
+        // State resets will happen in the finger count logic below if needed
     }
 
     // THEN handle finger count changes and movement
     switch (data->finger_count) {
         case 0:
-            // Reset all states when no fingers
+            // Reset all states when no fingers detected
+            // This should happen AFTER gestures are processed to avoid conflicts
             reset_single_finger_state(&g_gesture_state);
             reset_two_finger_state(&g_gesture_state);
             reset_three_finger_state(&g_gesture_state);
@@ -95,7 +130,8 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
             if (g_gesture_state.twoFingerActive) reset_two_finger_state(&g_gesture_state);
             if (g_gesture_state.threeFingersPressed) reset_three_finger_state(&g_gesture_state);
 
-            // Handle single finger movement (but gestures were already handled above)
+            // Handle single finger movement (but skip if gesture was already handled above)
+            // This prevents double-processing of gestures
             if (!has_gesture) {
                 handle_single_finger_gestures(dev, data, &g_gesture_state);
             }
@@ -136,7 +172,6 @@ static void trackpad_trigger_handler(const struct device *dev, const struct iqs5
 static int trackpad_init(void) {
     trackpad = DEVICE_DT_GET_ANY(azoteq_iqs5xx);
     if (trackpad == NULL) {
-        LOG_ERR("Failed to get IQS5XX device");
         return -EINVAL;
     }
     trackpad_device = trackpad;
@@ -147,21 +182,22 @@ static int trackpad_init(void) {
     // Initialize the keyboard events system
     int ret = trackpad_keyboard_init(trackpad_device);
     if (ret < 0) {
-        LOG_ERR("Failed to initialize keyboard events: %d", ret);
         return ret;
     }
 
     // Initialize gesture state with devicetree sensitivity
     memset(&g_gesture_state, 0, sizeof(g_gesture_state));
     g_gesture_state.mouseSensitivity = config->sensitivity;
+    
+    // Initialize activity tracking
+    last_activity_time = k_uptime_get();
+    is_idle_mode = false;
 
     int err = iqs5xx_trigger_set(trackpad, trackpad_trigger_handler);
     if(err) {
-        LOG_ERR("Failed to set trigger handler: %d", err);
         return -EINVAL;
     }
 
-    LOG_INF("Trackpad initialized successfully");
     return 0;
 }
 
