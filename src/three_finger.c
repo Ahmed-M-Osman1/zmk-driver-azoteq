@@ -83,7 +83,7 @@ static void send_control_down(void) {
     k_msleep(10);
 
     // Press Down Arrow
-    int ret2 = zmk_hid_keyboard_press(DOWN_ARROW);
+    int ret2 = zmk_hid_keyboard_press(UP_ARROW);
     if (ret2 < 0) {
         zmk_hid_keyboard_release(LEFT_CONTROL);
         zmk_endpoints_send_report(HID_USAGE_KEY);
@@ -93,7 +93,7 @@ static void send_control_down(void) {
     k_msleep(30); // Reduced hold time
 
     // Release Down Arrow
-    zmk_hid_keyboard_release(DOWN_ARROW);
+    zmk_hid_keyboard_release(UP_ARROW);
     zmk_endpoints_send_report(HID_USAGE_KEY);
     k_msleep(5);
 
